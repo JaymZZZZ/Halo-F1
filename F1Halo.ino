@@ -1,0 +1,246 @@
+const int DRIVERS_NUMBER = 22;
+const String fw_version = "1.0.1";
+
+// fix the results api for when there are changes that result in a lesser number of drivers
+// retrieve stats api results for version checking (display notice if an update is available)
+// add other rss feed in other languages
+
+#define DISPLAY_TYPE DISPLAY_CYD_543
+#define TOUCH_CAPACITIVE
+#define TOUCH_SDA 8
+#define TOUCH_SCL 4
+#define TOUCH_INT 3
+#define TOUCH_RST -1
+#define TOUCH_MIN_X 1
+#define TOUCH_MAX_X 480
+#define TOUCH_MIN_Y 1
+#define TOUCH_MAX_Y 272
+#define SCREEN_WIDTH 272
+#define SCREEN_HEIGHT 480
+
+//Stream *debug;
+
+#include <ArduinoJson.h>
+#include <time.h>
+
+// WIFI MANAGEMENT
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <WiFiManager.h>
+WiFiManager wm;
+
+// LVGL
+#include <lvgl.h>
+#include "lv_conf.h"
+LV_FONT_DECLARE(f1_symbols_28);
+LV_FONT_DECLARE(montserrat_12);
+LV_FONT_DECLARE(montserrat_14);
+LV_FONT_DECLARE(montserrat_18);
+LV_FONT_DECLARE(montserrat_20);
+LV_FONT_DECLARE(montserrat_24);
+LV_FONT_DECLARE(montserrat_38);
+
+
+#define F1_SYMBOL_RANKING "\xEE\x95\xA1"
+#define F1_SYMBOL_CHEQUERED_FLAG "\xEF\x84\x9E"
+#define F1_SYMBOL_BARS "\xEF\x83\x89" 
+#define F1_SYMBOL_GEAR "\xEF\x80\x93"
+#define F1_SYMBOL_GEARS "\xEF\x82\x85"
+#define F1_SYMBOL_SLIDERS "\xEF\x87\x9E"
+#define F1_SYMBOL_WRENCH "\xEF\x82\xAD"
+#define F1_SYMBOL_HAMMER "\xEF\x9B\xA3"
+
+#define HALO_COLOR_RED 0xFF1511
+
+long UTCoffset;
+int32_t UTCoffsetHours, UTCoffsetMinutes;
+
+struct TimeRoller {
+  lv_obj_t * hours;
+  lv_obj_t * minutes;
+};
+
+TimeRoller nightModeStartRoller, nightModeStopRoller;
+
+struct NightModeTimes {
+  uint8_t start_hours;
+  uint8_t start_minutes;
+  uint8_t stop_hours;
+  uint8_t stop_minutes;
+};
+
+NightModeTimes nightModeTimes = {23, 0, 8, 0};
+
+bool nightModeActive = true;
+
+struct DriverStanding {
+  String position;
+  String points;
+  String number;
+  String name;
+  String surname;
+  String constructor;
+  String constructorId;
+};
+
+struct TeamStandings {
+  String position;
+  String points;
+  String name;
+  String id;
+};
+
+struct SeasonStanding {
+  String season;
+  String round;
+  DriverStanding driver_standings[30];
+  TeamStandings team_standings[12];
+  int driver_count;
+  int team_count;
+};
+
+SeasonStanding current_season;
+
+int driverStandingsCount = 0;
+
+struct RaceSession {
+    String name;   // e.g., "FP1", "Sprint", "Race"
+    String date;   // Local date after offset applied
+    String time;   // Local time after offset applied
+};
+
+struct NextRaceInfo {
+    String raceName;
+    String circuitName;
+    String country;
+    bool isSprintWeekend;
+    int sessionCount;
+    RaceSession sessions[10]; // Usually no more than 6
+};
+
+NextRaceInfo next_race;
+
+struct SessionResults {
+  String driver_number;
+  String position;
+  float duration;          // for race (seconds)
+  float quali[3];          // for qualifying (Q1, Q2, Q3)
+  float gap_to_leader;
+  float gap_to_leader_quali[3];
+  bool isQualifying;
+  bool dnf;
+  bool dns;
+};
+
+SessionResults results[DRIVERS_NUMBER];
+String current_results;
+bool results_checked_once = false, results_loaded_once = false, standings_loaded_once = false, got_new_results = false;
+
+unsigned long long last_checked_session_results = 0;
+unsigned int check_delay = 0;
+
+uint8_t brightness = 255, night_brightness = 30;
+lv_obj_t * brightness_slider, *night_brightness_slider;
+
+lv_display_t * disp;
+lv_timer_t * clock_timer, * f1_api_timer, * standings_ui_timer, *news_timer, *statistics_timer, *notifications_timer;
+lv_obj_t * language_selector;
+lv_obj_t * sessions_container, * standings_container;
+
+static int standings_offset = 0;
+const int STANDINGS_PAGE_SIZE = 5;
+const int TOTAL_DRIVERS = 22; // adjust if needed
+
+struct ScreenStruct {
+  lv_obj_t * wifi;
+  lv_obj_t * home;
+  //lv_obj_t * settings;
+};
+
+ScreenStruct screen;
+
+struct RaceTabLabelsStruct {
+  lv_obj_t * clock;
+  lv_obj_t * date;
+  lv_obj_t * race_name;
+};
+
+RaceTabLabelsStruct racetab_labels;
+
+lv_obj_t * home_tabs;
+
+struct TabsStruct {
+  lv_obj_t * race;
+  lv_obj_t * news;
+  lv_obj_t * settings;
+};
+
+TabsStruct tabs;
+
+// LCD SCREEN
+#include <bb_spi_lcd.h>
+#include "lv_bb_spi_lcd.h"
+#include "touchscreen.h"
+// FILES
+#include "audio.h"
+#include "localized_strings.h"
+#include "utils.h"
+#include "notifications.h"
+#include "image_handler.h"
+#include "ui.h"
+//#include "bluetooth_audio_ui.h"
+#include "wifi_handler.h"
+
+
+void setup() {
+  Serial.begin(115200);
+  //debug = &Serial;
+
+  localized_text = &language_strings_en;
+
+  // Initialise LVGL
+  lv_init();
+  lv_tick_set_cb([](){ 
+    return (uint32_t) (esp_timer_get_time() / 1000ULL);
+  });
+  lv_display_t* disp = lv_bb_spi_lcd_create(DISPLAY_TYPE);
+
+#ifdef TOUCH_CAPACITIVE
+  // Initialize touch screen
+  bbct.init(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_INT);
+  //bbct.setOrientation(270, SCREEN_WIDTH, SCREEN_HEIGHT);
+#else
+  lv_bb_spi_lcd_t* dsc = (lv_bb_spi_lcd_t *)lv_display_get_driver_data(disp);
+  lcd = dsc->lcd;
+  lcd->rtInit(TOUCH_MOSI, TOUCH_MISO, TOUCH_CLK, TOUCH_CS);
+#endif
+
+  // Register touch
+  lv_indev_t* indev = lv_indev_create();
+  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);  
+  lv_indev_set_read_cb(indev, touch_read);
+
+  playNotificationSound();
+
+  create_ui_skeleton();
+
+  setupWiFiManager(false);
+
+  post_wifi_ui_creation();
+
+  lv_screen_load(screen.home);
+
+  String uuid = getDeviceUUID();
+  Serial.println("Device UUID: " + uuid);
+  Serial.println("Device FW: " + fw_version);
+
+  sendStatisticData(nullptr);
+
+  Serial.println("Setup done");
+}
+
+void loop() {   
+  lv_timer_periodic_handler();
+  delay(5);
+}
