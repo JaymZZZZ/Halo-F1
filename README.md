@@ -137,6 +137,16 @@ lv_conf.h             — LVGL configuration tuned for the JC4827W543 display
 
 ---
 
+## Future Developments
+
+- [ ] No spoiler mode
+- [ ] Audio notifications when a new article is fetched
+- [ ] Add constructors standings, let user choose if to display drivers, constructors or both standings
+- [ ] Add timezone override in menu
+- [ ] Add more RSS feeds
+
+---
+
 ## Copyright & Terms of Use
 
 Copyright © 2026 Fabio Rossato. All rights reserved.

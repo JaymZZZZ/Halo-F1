@@ -374,7 +374,7 @@ bool fetch_f1_driver_standings() {
 }
 
 // Fetch driver standings, returns false on fail, loads them into current_season struct otherwise
-bool old_fetch_f1_driver_standings() {
+/*bool old_fetch_f1_driver_standings() {
   HTTPClient client;
   std::string url = "https://api.jolpi.ca/ergast/f1/current/driverstandings/";
   
@@ -462,7 +462,7 @@ bool old_fetch_f1_driver_standings() {
   standings_loaded_once = true;
 
   return true;
-}
+}*/
 
 // Fetch next race infos and loads them into the given "NextRaceInfo" type struct or returns false on fail
 bool getNextRaceInfo(NextRaceInfo &info) {
