@@ -193,5 +193,6 @@ No open-source license is granted. The absence of a license means this code is *
 
 - 🌐 **Website & firmware installer** — [halof1.com](https://halof1.com/)
 - 🖨 **3D-printable case** — [MakerWorld](https://makerworld.com/it/models/2492192-halo-your-f1-desktop-companion)
-- 📸 **Instagram** — [@\_fabio_rossato](https://instagram.com/_fabio_rossato)
+- 📸 **Instagram** — [@\fabiotechgarage](https://instagram.com/fabiotechgarage)
+- 👾 **Discord Server** - [Invite link](https://discord.gg/fMa5KDeFUV)
 - ☕ **Support the project** — [paypal.me/rossatof](https://paypal.me/rossatof)
