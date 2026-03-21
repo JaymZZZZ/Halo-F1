@@ -129,10 +129,28 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
     secureClient.setInsecure();   // same pattern as getLastSessionResults()
 
     HTTPClient http;
-    http.begin(secureClient, url);
+    secureClient.setTimeout(12000);
+    http.setConnectTimeout(12000);
+    http.setTimeout(12000);
+    http.setReuse(false);
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+    if (!http.begin(secureClient, url)) {
+#if HALO_HTTP_DEBUG
+        Serial.println("[Weather] begin() failed");
+#endif
+        return false;
+    }
     http.setTimeout(12000);
 
     int httpCode = http.GET();
+#if HALO_HTTP_DEBUG
+    Serial.printf("[Weather] HTTP: %d (%s)\n", httpCode, HTTPClient::errorToString(httpCode).c_str());
+    if (httpCode < 0) {
+        char tlsErr[128] = {0};
+        int tlsCode = secureClient.lastError(tlsErr, sizeof(tlsErr));
+        Serial.printf("[Weather] TLS: %d (%s)\n", tlsCode, tlsErr);
+    }
+#endif
     if (httpCode != 200) {
         Serial.printf("[Weather] HTTP error: %d — %s\n",
                       httpCode, http.getString().c_str());
@@ -148,6 +166,12 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
     http.end();
 
     Serial.printf("[Weather] Payload length: %d\n", payload.length());
+#if HALO_HTTP_DEBUG
+    String preview = payload.substring(0, min((int)payload.length(), 240));
+    preview.replace("\r", " ");
+    preview.replace("\n", " ");
+    Serial.printf("[Weather] Payload preview: %s\n", preview.c_str());
+#endif
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);

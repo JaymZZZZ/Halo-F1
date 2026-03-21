@@ -31,10 +31,35 @@ static lv_style_t style_news_title;
 static lv_style_t style_news_desc;
 static lv_style_t style_qr_caption;
 static bool news_styles_initialized = false;
+static bool settings_rebuild_queued = false;
+static bool settings_ui_initialized = false;
+
+static inline void logLoopStackWatermark(const char *tag) {
+#if HALO_STACK_DEBUG
+  UBaseType_t words = uxTaskGetStackHighWaterMark(NULL);
+  Serial.printf("[Stack] %s: free=%u bytes\n", tag, (unsigned)(words * sizeof(StackType_t)));
+#else
+  (void)tag;
+#endif
+}
+
+static void rebuild_settings_ui_async(void * /*unused*/) {
+  settings_rebuild_queued = false;
+  create_or_reload_settings_ui();
+  force_update_ui();
+}
 
 
 void adjustBrightness(uint8_t new_brightness) {
+  if (!disp) {
+    Serial.println("[UI] Brightness change skipped: display is not initialized");
+    return;
+  }
   lv_bb_spi_lcd_t * dsc = (lv_bb_spi_lcd_t *)lv_display_get_driver_data(disp);
+  if (!dsc || !dsc->lcd) {
+    Serial.println("[UI] Brightness change skipped: LCD driver is unavailable");
+    return;
+  }
   dsc->lcd->setBrightness(new_brightness);
   Serial.printf("Brightness Adjusted to: %d\n", new_brightness);
 }
@@ -46,9 +71,12 @@ static void language_selection_event_handler(lv_event_t * e) {
   if (sel < languageCount) {
       localized_text = languages[sel].strings;
       Serial.printf("Language changed to: %s\n", languages[sel].displayName);
-      create_or_reload_settings_ui();
-      //update_ui(nullptr); //update time sensitive ui
-      force_update_ui();
+      if (!settings_rebuild_queued) {
+        settings_rebuild_queued = true;
+        // Rebuild after the current event dispatch to avoid cleaning
+        // the active dropdown tree while LVGL is still iterating it.
+        lv_async_call(rebuild_settings_ui_async, nullptr);
+      }
       //create_or_reload_news_ui(nullptr); //takes too long
   }
 }
@@ -356,13 +384,24 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     lv_obj_t *lbl_points = lv_label_create(row);
     lv_label_set_text_fmt(lbl_points, "%s", points.c_str());
     lv_obj_set_width(lbl_points, 60);
+#if HALO_UI_ENABLE_CONTINUOUS_TEXT_SCROLL
     lv_label_set_long_mode(lbl_points, LV_LABEL_LONG_SCROLL);
+#else
+    lv_label_set_long_mode(lbl_points, LV_LABEL_LONG_MODE_CLIP);
+#endif
     lv_obj_add_style(lbl_points, &style_standings_lbl_points, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     return row;
 }
 
 void animate_standings(lv_obj_t * container) {
+#if !HALO_UI_ENABLE_FADE_ANIMATIONS
+    standings_offset += STANDINGS_PAGE_SIZE;
+    if (standings_offset >= TOTAL_DRIVERS) standings_offset = 0;
+    lv_obj_clean(container);
+    populate_standings(container, standings_offset);
+    return;
+#else
     if (!style_fade_inited) {
         lv_style_init(&style_fade);
         lv_style_set_opa(&style_fade, LV_OPA_COVER);  // start fully visible
@@ -427,6 +466,7 @@ void animate_standings(lv_obj_t * container) {
     lv_anim_start(&a);
 
     //Serial.println("Animating standings -- function has run -- (fade out animation should have started now)");
+#endif
 }
 
 static void populate_standings(lv_obj_t * container, int offset) {
@@ -451,6 +491,13 @@ static void populate_standings(lv_obj_t * container, int offset) {
 }
 
 void animate_results(lv_obj_t * container) {
+#if !HALO_UI_ENABLE_FADE_ANIMATIONS
+    standings_offset += STANDINGS_PAGE_SIZE;
+    if (standings_offset >= TOTAL_DRIVERS) standings_offset = 0;
+    lv_obj_clean(container);
+    populate_results(container, standings_offset);
+    return;
+#else
     if (!style_fade_inited) {
         lv_style_init(&style_fade);
         lv_style_set_opa(&style_fade, LV_OPA_COVER);  // start fully visible
@@ -515,6 +562,7 @@ void animate_results(lv_obj_t * container) {
     lv_anim_start(&a);
 
     //Serial.println("Animating results -- function has run -- (fade out animation should have started now)");
+#endif
 }
 
 static void populate_results(lv_obj_t * container, int offset) {
@@ -529,13 +577,13 @@ static void populate_results(lv_obj_t * container, int offset) {
         DriverStanding * driver = getDriverInfoByNumber(results[idx].driver_number);
 
         if (driver == nullptr) {
-          Serial.printf("Driver not found for number %d, id: %d\n", results[idx].driver_number, idx);
+          Serial.printf("Driver not found for number %s, id: %d\n", results[idx].driver_number.c_str(), idx);
           continue; // skip this entry
         }
 
-        char driverInitial;
+        char driverInitial = '?';
         if (driver->name.length() == 0) {
-          Serial.printf("Driver %d has empty name\n", results[idx].driver_number);
+          Serial.printf("Driver %s has empty name\n", results[idx].driver_number.c_str());
         } else {
           driverInitial = driver->name.charAt(0);
         }
@@ -543,8 +591,8 @@ static void populate_results(lv_obj_t * container, int offset) {
         String name = String(driverInitial) + ". " + driver->surname + " #" + results[idx].driver_number;      
         String gap;
 
-        char gappo[10];
-        snprintf(gappo, 10, "+ %.3f",  results[idx].gap_to_leader);
+        char gappo[16] = {0};
+        snprintf(gappo, sizeof(gappo), "+ %.3f", results[idx].gap_to_leader);
 
         gap = (String) gappo;
         if (idx==0) gap = (String) formatLapTime(results[idx].duration);
@@ -582,13 +630,13 @@ static void populate_results(lv_obj_t * container, int offset) {
         DriverStanding * driver = getDriverInfoByNumber(results[idx].driver_number);
 
         if (driver == nullptr) {
-          Serial.printf("Driver not found for number %d\n", results[idx].driver_number);
+          Serial.printf("Driver not found for number %s\n", results[idx].driver_number.c_str());
           continue; // skip this entry
         }
 
-        char driverInitial;
+        char driverInitial = '?';
         if (driver->name.length() == 0) {
-          Serial.printf("Driver %d has empty name\n", results[idx].driver_number);
+          Serial.printf("Driver %s has empty name\n", results[idx].driver_number.c_str());
         } else {
           driverInitial = driver->name.charAt(0);
         }
@@ -597,8 +645,12 @@ static void populate_results(lv_obj_t * container, int offset) {
         String gap;
 
 
-        char gappo[10];
-        if (idx < 10) snprintf(gappo, 10, "+ %.3f",  results[idx].gap_to_leader_quali[2]);
+        char gappo[16] = {0};
+        if (idx < 10) {
+          snprintf(gappo, sizeof(gappo), "+ %.3f", results[idx].gap_to_leader_quali[2]);
+        } else {
+          snprintf(gappo, sizeof(gappo), "--");
+        }
 
         gap = (String) gappo;
         if (idx==0) gap = (String) formatLapTime(results[idx].quali[2]);
@@ -637,7 +689,7 @@ void set_custom_theme(void) {
     lv_color_hex(0xFF1511), //0xFFCC00 0x0088FF 0x008C3F
     lv_color_hex(0x000000),
     LV_THEME_DEFAULT_DARK,
-    &montserrat_14
+    HALO_FONT_SM
   );
 
   lv_disp_set_theme(NULL, my_theme);
@@ -681,20 +733,36 @@ lv_obj_t* create_chequered_stripe(lv_obj_t* parent) {
 }
 
 lv_obj_t * create_text(lv_obj_t * parent, const char * icon, const char * txt, int builder_variant) {
-    lv_obj_t * obj = lv_menu_cont_create(parent);
+    lv_obj_t * obj = lv_obj_create(parent);
+    lv_obj_remove_style_all(obj);
+    lv_obj_set_width(obj, LV_PCT(100));
+    lv_obj_set_height(obj, LV_SIZE_CONTENT);
+    lv_obj_set_layout(obj, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(obj, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(obj, 14, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(obj, 14, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(obj, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(obj, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(obj, 10, LV_PART_MAIN);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t * img = NULL;
     lv_obj_t * label = NULL;
 
     if(icon) {
-        img = lv_img_create(obj);
-        lv_img_set_src(img, icon);
+        img = lv_label_create(obj);
+        lv_label_set_text(img, icon);
+        lv_obj_set_style_text_font(img, HALO_FONT_SM, 0);
+        lv_obj_set_style_text_color(img, lv_color_hex(HALO_COLOR_RED), 0);
     }
 
     if(txt) {
         label = lv_label_create(obj);
         lv_label_set_text(label, txt);
-        lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_CLIP);
         lv_obj_set_flex_grow(label, 1);
     }
 
@@ -705,7 +773,6 @@ lv_obj_t * create_text(lv_obj_t * parent, const char * icon, const char * txt, i
 
     
     lv_obj_set_style_text_color(obj, lv_color_hex(0xcccccc), 0);
-    lv_obj_set_style_pad_ver(obj, 20, 0);
 
     return obj;
 }
@@ -772,7 +839,7 @@ lv_obj_t * create_switch(lv_obj_t * parent, const char * icon, const char * txt,
     // Apply the style only when the switch is "checked"
     //lv_obj_add_style(sw, &style_on, LV_PART_INDICATOR | LV_STATE_CHECKED);
 
-    lv_obj_add_state(sw, chk ? LV_STATE_CHECKED : 0);
+    if (chk) lv_obj_add_state(sw, LV_STATE_CHECKED);
 
     return sw;
 }
@@ -780,7 +847,7 @@ lv_obj_t * create_switch(lv_obj_t * parent, const char * icon, const char * txt,
 lv_obj_t * create_time_roller(lv_obj_t *parent, const char *icon, const char *text) {
     lv_obj_t * obj = create_text(parent, icon, text, 1);
     lv_obj_t * sw = lv_switch_create(obj);
-    lv_obj_add_state(sw, nightModeActive ? LV_STATE_CHECKED : 0);
+    if (nightModeActive) lv_obj_add_state(sw, LV_STATE_CHECKED);
     lv_obj_add_event_cb(sw, night_mode_switch_handler, LV_EVENT_VALUE_CHANGED, NULL);
 
     //lv_obj_t * cont = lv_obj_create(obj);
@@ -825,10 +892,10 @@ lv_obj_t * create_time_roller(lv_obj_t *parent, const char *icon, const char *te
     lv_roller_set_selected(nightModeStopRoller.hours, nightModeTimes.stop_hours, LV_ANIM_OFF);
     lv_roller_set_selected(nightModeStopRoller.minutes, nightModeTimes.stop_minutes / 5, LV_ANIM_OFF);
 
-    lv_obj_add_event_cb(nightModeStartRoller.hours, night_mode_roller_event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(nightModeStartRoller.minutes, night_mode_roller_event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(nightModeStopRoller.hours, night_mode_roller_event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(nightModeStopRoller.minutes, night_mode_roller_event_handler, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(nightModeStartRoller.hours, night_mode_roller_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(nightModeStartRoller.minutes, night_mode_roller_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(nightModeStopRoller.hours, night_mode_roller_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(nightModeStopRoller.minutes, night_mode_roller_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
     return obj;
 }
 
@@ -853,7 +920,7 @@ lv_obj_t * create_settings_divider(lv_obj_t *parent, const char *title = nullptr
     if (title != nullptr && strlen(title) > 0) {
         lv_obj_t *lbl = lv_label_create(wrapper);
         lv_label_set_text(lbl, title);
-        lv_obj_set_style_text_font(lbl, &montserrat_12, 0);
+        lv_obj_set_style_text_font(lbl, HALO_FONT_XS, 0);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0x888888), 0);
         lv_obj_set_style_pad_right(lbl, 8, 0);
         lv_obj_set_height(lbl, LV_SIZE_CONTENT);
@@ -912,7 +979,7 @@ void show_spoiler_button(lv_obj_t *container, bool wasStandings) {
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, localized_text->show_results);
-    lv_obj_set_style_text_font(lbl, &montserrat_14, 0);
+    lv_obj_set_style_text_font(lbl, HALO_FONT_SM, 0);
 
     lv_obj_add_event_cb(btn, [](lv_event_t *e) {
         // Set state flags immediately while btn is still alive
@@ -963,7 +1030,7 @@ void create_or_reload_race_sessions(bool force_reload) {
       // ── Session text label: transparent bg, inherits row's background ──────
       lv_style_init(&style_session_label);
       lv_style_set_text_align(&style_session_label, LV_TEXT_ALIGN_LEFT);
-      lv_style_set_text_font(&style_session_label, &montserrat_12);
+      lv_style_set_text_font(&style_session_label, HALO_FONT_XS);
       lv_style_set_pad_top(&style_session_label, 3);
       lv_style_set_pad_bottom(&style_session_label, 3);
       lv_style_set_pad_left(&style_session_label, 8);
@@ -987,7 +1054,7 @@ void create_or_reload_race_sessions(bool force_reload) {
   if (!next_race.sessionCount || next_race.sessionCount == NULL) return;
 
   // ── Row width: same 90 % of screen that the old single labels used ─────────
-  lv_coord_t row_w = (lv_coord_t)(SCREEN_WIDTH - 4);
+  lv_coord_t row_w = (lv_coord_t)(HALO_UI_LAYOUT_WIDTH - 4);
 
   // Weather-badge column is only shown when data is available.
   // 48 px is comfortable for "SUN 22°" in montserrat_12.
@@ -1035,7 +1102,11 @@ void create_or_reload_race_sessions(bool force_reload) {
     session_label = lv_label_create(session_row);
     lv_obj_add_style(session_label, &style_session_label, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_flex_grow(session_label, 1);  // expands to fill space left of badge
+#if HALO_UI_ENABLE_CONTINUOUS_TEXT_SCROLL
     lv_label_set_long_mode(session_label, LV_LABEL_LONG_MODE_SCROLL);
+#else
+    lv_label_set_long_mode(session_label, LV_LABEL_LONG_MODE_DOTS);
+#endif
 
     if (next_race.isSprintWeekend &&
         (session.name == "Sprint Qualifying" || session.name == "Sprint Race")) {
@@ -1245,7 +1316,7 @@ void create_or_reload_race_ui() {
   lv_obj_align(racetab_labels.date, LV_ALIGN_TOP_LEFT, 0, 0);
   lv_obj_set_style_text_align(racetab_labels.date, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_label_set_long_mode(racetab_labels.date, LV_LABEL_LONG_MODE_DOTS); 
-  lv_obj_set_width(racetab_labels.date, 0.9 * SCREEN_WIDTH);
+  lv_obj_set_width(racetab_labels.date, 0.9 * HALO_UI_LAYOUT_WIDTH);
   lv_obj_set_style_bg_opa(racetab_labels.date, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_bg_color(racetab_labels.date, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_border_color(racetab_labels.date, lv_color_hex(HALO_COLOR_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -1256,7 +1327,7 @@ void create_or_reload_race_ui() {
   lv_obj_set_style_pad_left(racetab_labels.date, 4, LV_PART_MAIN | LV_STATE_DEFAULT);
 
 
-  lv_obj_set_style_text_font(racetab_labels.date, &montserrat_18, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(racetab_labels.date, HALO_FONT_MD, LV_PART_MAIN | LV_STATE_DEFAULT);
 
 
   //---------//
@@ -1272,7 +1343,7 @@ void create_or_reload_race_ui() {
   lv_obj_set_style_bg_color(racetab_labels.clock, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_pad_left(racetab_labels.clock, 4, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-  lv_obj_set_style_text_font(racetab_labels.clock, &montserrat_38, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(racetab_labels.clock, HALO_FONT_XL, LV_PART_MAIN | LV_STATE_DEFAULT);
 
 
   //------------//
@@ -1283,19 +1354,24 @@ void create_or_reload_race_ui() {
   lv_label_set_text(racetab_labels.race_name, "");
 
   lv_obj_align(racetab_labels.race_name, LV_ALIGN_TOP_MID, 0, 60);
-  lv_obj_set_style_width(racetab_labels.race_name, LV_SIZE_CONTENT, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_width(racetab_labels.race_name, HALO_UI_LAYOUT_WIDTH - 8, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_align(racetab_labels.race_name, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_label_set_long_mode(racetab_labels.race_name, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR); 
+#if HALO_UI_ENABLE_CONTINUOUS_TEXT_SCROLL
+  lv_label_set_long_mode(racetab_labels.race_name, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+#else
+  lv_label_set_long_mode(racetab_labels.race_name, LV_LABEL_LONG_MODE_DOTS);
+#endif
 
-  lv_obj_set_style_text_font(racetab_labels.race_name, &montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_font(racetab_labels.race_name, HALO_FONT_LG, LV_PART_MAIN | LV_STATE_DEFAULT);
 
 
   sessions_container = lv_obj_create(tabs.race);
   lv_obj_remove_style_all(sessions_container);
-  lv_obj_set_style_width(sessions_container, SCREEN_WIDTH, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_width(sessions_container, HALO_UI_LAYOUT_WIDTH, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_height(sessions_container, LV_SIZE_CONTENT, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_align(sessions_container, LV_ALIGN_TOP_MID, 0, 110);
   lv_obj_set_flex_flow(sessions_container, LV_FLEX_FLOW_COLUMN);
+  lv_obj_remove_flag(sessions_container, LV_OBJ_FLAG_SCROLLABLE);
   //create_or_reload_race_sessions();
 
   standings_container = lv_obj_create(tabs.race);
@@ -1303,9 +1379,10 @@ void create_or_reload_race_ui() {
   lv_obj_set_layout(standings_container, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(standings_container, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_style_pad_gap(standings_container, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_width(standings_container, SCREEN_WIDTH, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_width(standings_container, HALO_UI_LAYOUT_WIDTH, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_scroll_snap_y(standings_container, LV_SCROLL_SNAP_START);
-  lv_obj_align(standings_container, LV_ALIGN_TOP_MID, - SCREEN_WIDTH * 0.025, 295);
+  lv_obj_align(standings_container, LV_ALIGN_TOP_MID, - HALO_UI_LAYOUT_WIDTH * 0.025, 295);
+  lv_obj_remove_flag(standings_container, LV_OBJ_FLAG_SCROLLABLE);
 
   Serial.println("Creating or Reloading Race UI -- DONE!");
 }
@@ -1335,12 +1412,12 @@ void create_or_reload_news_ui(lv_timer_t *timer) {
 
         // Title label style
         lv_style_init(&style_news_title);
-        lv_style_set_text_font(&style_news_title, &montserrat_20);
+        lv_style_set_text_font(&style_news_title, HALO_FONT_MD);
         lv_style_set_text_align(&style_news_title, LV_TEXT_ALIGN_LEFT);
 
         // Description label style
         lv_style_init(&style_news_desc);
-        lv_style_set_text_font(&style_news_desc, &montserrat_12);
+        lv_style_set_text_font(&style_news_desc, HALO_FONT_XS);
         lv_style_set_text_align(&style_news_desc, LV_TEXT_ALIGN_LEFT);
         lv_style_set_border_width(&style_news_desc, 3);
         lv_style_set_border_side(&style_news_desc, LV_BORDER_SIDE_LEFT);
@@ -1349,7 +1426,7 @@ void create_or_reload_news_ui(lv_timer_t *timer) {
 
         // QR caption style
         lv_style_init(&style_qr_caption);
-        lv_style_set_text_font(&style_qr_caption, &montserrat_12);
+        lv_style_set_text_font(&style_qr_caption, HALO_FONT_XS);
         lv_style_set_text_align(&style_qr_caption, LV_TEXT_ALIGN_CENTER);
         lv_style_set_bg_color(&style_qr_caption, lv_color_hex(HALO_COLOR_RED));
         lv_style_set_bg_opa(&style_qr_caption, LV_OPA_COVER);
@@ -1409,7 +1486,11 @@ void create_or_reload_news_ui(lv_timer_t *timer) {
     lv_label_set_text(caption, localized_text->scan_to_read);
     lv_obj_add_style(caption, &style_qr_caption, LV_PART_MAIN);
     lv_obj_align_to(caption, qr, LV_ALIGN_OUT_BOTTOM_MID, 0, 6);
+#if HALO_UI_ENABLE_CONTINUOUS_TEXT_SCROLL
     lv_label_set_long_mode(caption, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+#else
+    lv_label_set_long_mode(caption, LV_LABEL_LONG_MODE_CLIP);
+#endif
 
     Serial.println("News QR Code Created");
 
@@ -1422,12 +1503,13 @@ void create_or_reload_news_ui(lv_timer_t *timer) {
 
 // Runs once or when language is changed
 void create_or_reload_settings_ui() {
+  logLoopStackWatermark("settings_ui:enter");
   lv_obj_clean(tabs.settings);
 
   lv_obj_t *cont = lv_obj_create(tabs.settings);
   lv_obj_remove_style_all(cont);
-  lv_obj_set_size(cont, LV_PCT(100), LV_PCT(100)); //LV_SIZE_CONTENT
-  lv_obj_center(cont);
+  lv_obj_set_size(cont, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, 0);
   lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(cont,
                         LV_FLEX_ALIGN_START,   /* main axis (vertical in column) */
@@ -1435,6 +1517,11 @@ void create_or_reload_settings_ui() {
                         LV_FLEX_ALIGN_CENTER); /* track cross axis */
 
   lv_obj_set_style_pad_row(cont, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_pad_bottom(cont, 18, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_set_scroll_dir(tabs.settings, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(tabs.settings, LV_SCROLLBAR_MODE_AUTO);
 
   // Scrollbar styles
   lv_obj_set_style_bg_color(tabs.settings, lv_color_black(), LV_PART_SCROLLBAR);
@@ -1464,7 +1551,8 @@ void create_or_reload_settings_ui() {
   night_brightness_slider = create_slider(cont, LV_SYMBOL_IMAGE, localized_text->night_brightness, 5, 255, night_brightness);
   lv_obj_add_event_cb(night_brightness_slider, night_brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-  
+  settings_ui_initialized = true;
+  logLoopStackWatermark("settings_ui:exit");
 }
 
 // Runs once
@@ -1473,6 +1561,8 @@ lv_obj_t * create_main_tabview(lv_obj_t * screen) {
     tabview = lv_tabview_create(screen);
     lv_tabview_set_tab_bar_position(tabview, LV_DIR_BOTTOM);
     lv_tabview_set_tab_bar_size(tabview, 48);
+    // Avoid accidental swipe/drag movement on noisy touch hardware.
+    lv_obj_remove_flag(tabview, LV_OBJ_FLAG_SCROLLABLE);
 
 
     // Get the tab bar (button container)
@@ -1489,6 +1579,19 @@ lv_obj_t * create_main_tabview(lv_obj_t * screen) {
     tabs.race = lv_tabview_add_tab(tabview, F1_SYMBOL_CHEQUERED_FLAG);
     tabs.news = lv_tabview_add_tab(tabview, F1_SYMBOL_RANKING);
     tabs.settings = lv_tabview_add_tab(tabview, F1_SYMBOL_BARS);
+    lv_obj_remove_flag(tabs.race, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(tabs.news, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Build settings lazily on first tab open to keep startup heap pressure low
+    // for initial TLS/API handshakes.
+    lv_obj_add_event_cb(tabview, [](lv_event_t *e) {
+        if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+        lv_obj_t *tv = (lv_obj_t *)lv_event_get_target(e);
+        uint32_t active = lv_tabview_get_tab_active(tv);
+        if (active == 2 && !settings_ui_initialized) {
+            create_or_reload_settings_ui();
+        }
+    }, LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_set_style_pad_all(tabs.race, 0, 0);
     //lv_obj_set_style_pad_all(tabs.news, 0, 0);
@@ -1510,8 +1613,13 @@ lv_obj_t * create_main_tabview(lv_obj_t * screen) {
 
 // Runs once and terminates by loading WiFi Manager info screen
 void create_ui_skeleton() {
+  logLoopStackWatermark("ui_skeleton:enter");
   screen.wifi = lv_obj_create(NULL);
   screen.home = lv_obj_create(NULL);
+  screen.wifi_root = screen.wifi;
+  screen.home_root = screen.home;
+  lv_obj_remove_flag(screen.wifi, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_remove_flag(screen.home, LV_OBJ_FLAG_SCROLLABLE);
   //screen.settings = lv_obj_create(NULL);
 
   set_custom_theme();
@@ -1525,22 +1633,51 @@ void create_ui_skeleton() {
   //lv_obj_set_style_bg_color(screen.settings, lv_color_hex(0x000000), 0); // Set to a dark background
   //lv_obj_set_style_bg_opa(screen.settings, LV_OPA_COVER, 0);
 
+#if HALO_UI_SCALE_ACTIVE
+  screen.wifi_root = lv_obj_create(screen.wifi);
+  screen.home_root = lv_obj_create(screen.home);
+
+  lv_obj_set_style_bg_opa(screen.wifi_root, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_bg_opa(screen.home_root, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(screen.wifi_root, 0, 0);
+  lv_obj_set_style_border_width(screen.home_root, 0, 0);
+  lv_obj_set_style_pad_all(screen.wifi_root, 0, 0);
+  lv_obj_set_style_pad_all(screen.home_root, 0, 0);
+  lv_obj_remove_flag(screen.wifi_root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_remove_flag(screen.home_root, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_set_size(screen.wifi_root, HALO_UI_LAYOUT_WIDTH, HALO_UI_LAYOUT_HEIGHT);
+  lv_obj_set_size(screen.home_root, HALO_UI_LAYOUT_WIDTH, HALO_UI_LAYOUT_HEIGHT);
+  lv_obj_align(screen.wifi_root, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_align(screen.home_root, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  lv_obj_set_style_transform_pivot_x(screen.wifi_root, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_transform_pivot_y(screen.wifi_root, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_transform_scale_x(screen.wifi_root, HALO_UI_SCALE_X, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_transform_scale_y(screen.wifi_root, HALO_UI_SCALE_Y, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  lv_obj_set_style_transform_pivot_x(screen.home_root, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_transform_pivot_y(screen.home_root, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_transform_scale_x(screen.home_root, HALO_UI_SCALE_X, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_transform_scale_y(screen.home_root, HALO_UI_SCALE_Y, LV_PART_MAIN | LV_STATE_DEFAULT);
+#endif
+
   // this only needs to be created once
-  lv_obj_t * label = lv_label_create(screen.wifi);
+  lv_obj_t * label = lv_label_create(screen.wifi_root);
   lv_label_set_text(label, localized_text->wifi_connection_needed);
   lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_height(label, LV_SIZE_CONTENT);
-  lv_obj_set_width(label, SCREEN_WIDTH);
+  lv_obj_set_width(label, HALO_UI_LAYOUT_WIDTH);
   lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP); 
   lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 
-  home_tabs = create_main_tabview(screen.home);
+  home_tabs = create_main_tabview(screen.home_root);
 
   create_or_reload_race_ui();
-  create_or_reload_settings_ui();
 
   lv_screen_load(screen.wifi);
   lv_timer_periodic_handler();
+  logLoopStackWatermark("ui_skeleton:exit");
 }
 
 // Runs once after WiFi connection is established

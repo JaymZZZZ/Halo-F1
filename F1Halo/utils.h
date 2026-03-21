@@ -36,12 +36,46 @@ String formatLapTime(float seconds) {
 
 // API call to get current timezone offset
 int64_t getUtcOffsetInSeconds() {
+#if HALO_FORCE_DEFAULT_TIMEZONE
+  UTCoffsetHours = HALO_DEFAULT_UTC_OFFSET_SECONDS / 3600;
+  UTCoffsetMinutes = (abs(HALO_DEFAULT_UTC_OFFSET_SECONDS) % 3600) / 60;
+  if (HALO_DEFAULT_UTC_OFFSET_SECONDS < 0) UTCoffsetMinutes = -UTCoffsetMinutes;
+  Serial.printf("[TZ] Forced default timezone: %s (%ld sec)\n",
+                HALO_DEFAULT_TIMEZONE_NAME,
+                (long)HALO_DEFAULT_UTC_OFFSET_SECONDS);
+  return HALO_DEFAULT_UTC_OFFSET_SECONDS;
+#endif
+
+  WiFiClientSecure secureClient;
   HTTPClient client;
+  secureClient.setInsecure();
+  secureClient.setTimeout(12000);
+  client.setConnectTimeout(12000);
+  client.setTimeout(12000);
+  client.setReuse(false);
+  client.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  client.setUserAgent("Halo-F1/1.2.0");
 
   //debug->println("Getting local time zone");
   std::string url = "https://ipapi.co/utc_offset/";
-  client.begin(url.c_str());
+#if HALO_HTTP_DEBUG
+  Serial.printf("[TZ] URL: %s\n", url.c_str());
+#endif
+  if (!client.begin(secureClient, url.c_str())) {
+#if HALO_HTTP_DEBUG
+    Serial.println("[TZ] begin() failed");
+#endif
+    return 0;
+  }
   int statusCode = client.GET();
+#if HALO_HTTP_DEBUG
+  Serial.printf("[TZ] HTTP: %d (%s)\n", statusCode, HTTPClient::errorToString(statusCode).c_str());
+  if (statusCode < 0) {
+    char tlsErr[128] = {0};
+    int tlsCode = secureClient.lastError(tlsErr, sizeof(tlsErr));
+    Serial.printf("[TZ] TLS: %d (%s)\n", tlsCode, tlsErr);
+  }
+#endif
   //debug->println("Status code: %i", statusCode);
   if (statusCode != 200 && statusCode != 429 && statusCode != -11) {
     //debug.println("Error getting local time zone, status code: %i\n", statusCode);
@@ -53,7 +87,15 @@ int64_t getUtcOffsetInSeconds() {
   if (statusCode == 429 || statusCode == -11) {
     offset = "+0000"; // defaults to UTC
   } else {
-    offset = std::string(client.getString().c_str());
+    String payload = client.getString();
+#if HALO_HTTP_DEBUG
+    String preview = payload.substring(0, min((int)payload.length(), 120));
+    preview.replace("\r", " ");
+    preview.replace("\n", " ");
+    Serial.printf("[TZ] Payload len: %d\n", payload.length());
+    Serial.printf("[TZ] Payload preview: %s\n", preview.c_str());
+#endif
+    offset = std::string(payload.c_str());
   }
 
   client.end();

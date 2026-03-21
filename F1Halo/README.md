@@ -67,37 +67,41 @@ Install the following through the Library Manager (Sketch â†’ Include Library â†
 | `ArduinoJson`       | Benoit Blanchon |
 | `bb_spi_lcd v2.7.1` | Larry Bank      |
 
-> **Note:** `lv_conf.h` must be configured for the JC4827W543 display before compiling. The `lv_conf.h` included in this repository is already set up correctly.
+> **Note:** the included `lv_conf.h` is tuned for the default JC4827W543 profile. If you target JC8048W550 and notice rendering or memory issues, adjust `lv_conf.h` to match your board.
 
-### Pin Configuration
+### Board Configuration
 
-The following defines are set at the top of `F1Halo.ino` and match the JC4827W543 board:
+`F1Halo.ino` now uses a single board selector define.
 
 ```cpp
-#define DISPLAY_TYPE    DISPLAY_CYD_543
-#define TOUCH_CAPACITIVE
-#define TOUCH_SDA        8
-#define TOUCH_SCL        4
-#define TOUCH_INT        3
-#define TOUCH_RST       -1
-#define TOUCH_MOSI      11
-#define TOUCH_MISO      13
-#define TOUCH_CLK       12
-#define TOUCH_CS        38
-#define SCREEN_WIDTH   272
-#define SCREEN_HEIGHT  480
+#define HALO_BOARD_JC4827W543 1
+#define HALO_BOARD_JC8048W550 2
+#define HALO_BOARD_MODEL HALO_BOARD_JC8048W550 // default
 ```
+
+To build for JC4827W543, change the last line to:
+
+```cpp
+#define HALO_BOARD_MODEL HALO_BOARD_JC4827W543
+```
+
+The board profile block in the sketch sets `DISPLAY_TYPE`, touch pins and screen size for each model.
 
 ### Compiling and Uploading
 
 1. Clone or download this repository
 2. Open `F1Halo.ino` in Arduino IDE
-3. If your board is Capacitive Touch, make sure `#define TOUCH_CAPACITIVE` is set, otherwise comment it out to compile for Resistive Touch
+3. If your board is resistive-touch, comment out `#define TOUCH_CAPACITIVE` inside the selected board profile block in `F1Halo.ino`
 4. Select **ESP32S3 Dev Module** as the target board
-5. Set **Flash Size** to **4MB**, **PSRAM** to **OPI PSRAM** (8 MB), and **Partition Scheme** to `Huge APP (3MB No OTA/1MB SPIFFS)`. Set **USB CDC On Boot** to **enabled** to get Serial feed via USB
-6. Connect the board via a USB-A to USB-C data cable
-7. If the port does not appear, hold `BOOT`, press `RST`, then release `BOOT` to enter flash mode
-8. Click **Upload**
+5. Set board options based on selected profile:
+   - **JC8048W550 (default profile)**: recommended **Flash Size** = **16MB**, **PSRAM** = **OPI PSRAM (8 MB)**, **Partition Scheme** = `16M Flash (3MB APP/9.9MB FATFS)` (or any 3MB-app partition)
+   - **JC4827W543 profile**: **Flash Size** = **4MB**, **PSRAM** = **OPI PSRAM (8 MB)**, **Partition Scheme** = `Huge APP (3MB No OTA/1MB SPIFFS)`
+6. Set **USB CDC On Boot** to **enabled** to get Serial feed via USB
+7. Connect the board via a USB-A to USB-C data cable
+8. If the port does not appear, hold `BOOT`, press `RST`, then release `BOOT` to enter flash mode
+9. Click **Upload**
+
+At boot, the firmware prints detected Flash/PSRAM sizes and warns over Serial if they are lower than the selected board profile recommendation.
 
 ---
 

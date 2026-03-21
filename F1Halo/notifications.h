@@ -1,5 +1,9 @@
 #include <vector>
 
+#ifndef HALO_ENABLE_POPUP_NOTIFICATIONS
+#define HALO_ENABLE_POPUP_NOTIFICATIONS 1
+#endif
+
 struct NotificationItem {
     String title;
     String text;
@@ -30,6 +34,12 @@ static void close_notification_event_handler(lv_event_t * e) {
 
 
 void show_notification_popup(String title, String text, String qrPayload) {
+#if !HALO_ENABLE_POPUP_NOTIFICATIONS
+    (void)title;
+    (void)text;
+    (void)qrPayload;
+    return;
+#endif
     // Prevent stacking
     if (current_notification_msgbox != NULL) {
         lv_msgbox_close(current_notification_msgbox);
@@ -62,6 +72,10 @@ void show_notification_popup(String title, String text, String qrPayload) {
 
 
 void notification_scheduler_task(lv_timer_t *timer) {
+#if !HALO_ENABLE_POPUP_NOTIFICATIONS
+    (void)timer;
+    return;
+#endif
     struct tm timeinfo;
     if (!getLocalTime(&timeinfo)) return;
 

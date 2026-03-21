@@ -1,105 +1,248 @@
-// Tries once to fetch the latest news
-bool fetchLatestNews(String &title, String &link, String &desc) {
-  WiFiClientSecure client;
+static void logHttpResult(const char *tag, const String &url, int httpCode, WiFiClientSecure *secureClient = nullptr) {
+#if HALO_HTTP_DEBUG
+  (void)url;
+  Serial.printf("[%s] HTTP: %d (%s)\n", tag, httpCode, HTTPClient::errorToString(httpCode).c_str());
+  if (httpCode < 0 && secureClient != nullptr) {
+    char tlsErr[128] = {0};
+    int tlsCode = secureClient->lastError(tlsErr, sizeof(tlsErr));
+    Serial.printf("[%s] TLS: %d (%s)\n", tag, tlsCode, tlsErr);
+  }
+#endif
+}
+
+static void logHttpPayloadPreview(const char *tag, const String &payload) {
+#if HALO_HTTP_DEBUG
+  int n = min((int)payload.length(), 240);
+  String preview = payload.substring(0, n);
+  preview.replace("\r", " ");
+  preview.replace("\n", " ");
+  Serial.printf("[%s] Payload len: %d\n", tag, payload.length());
+  Serial.printf("[%s] Payload preview: %s\n", tag, preview.c_str());
+#endif
+}
+
+static String extractHostFromUrl(const String &url) {
+  int schemePos = url.indexOf("://");
+  int hostStart = (schemePos >= 0) ? (schemePos + 3) : 0;
+  int hostEnd = url.indexOf('/', hostStart);
+  if (hostEnd < 0) hostEnd = url.length();
+  String hostPort = url.substring(hostStart, hostEnd);
+  int colonPos = hostPort.indexOf(':');
+  if (colonPos >= 0) return hostPort.substring(0, colonPos);
+  return hostPort;
+}
+
+static void logDnsForUrl(const char *tag, const String &url) {
+#if HALO_HTTP_DEBUG
+  String host = extractHostFromUrl(url);
+  if (host.length() == 0) return;
+  IPAddress resolvedIp;
+  bool ok = WiFi.hostByName(host.c_str(), resolvedIp);
+  if (ok) {
+    Serial.printf("[%s] DNS: %s -> %u.%u.%u.%u\n",
+                  tag, host.c_str(),
+                  resolvedIp[0], resolvedIp[1], resolvedIp[2], resolvedIp[3]);
+  } else {
+    Serial.printf("[%s] DNS failed: %s\n", tag, host.c_str());
+  }
+#else
+  (void)tag;
+  (void)url;
+#endif
+}
+
+static void ensureStationDnsConfigured() {
+  IPAddress dns0 = WiFi.dnsIP(0);
+  IPAddress dns1 = WiFi.dnsIP(1);
+  Serial.printf("[WiFi] DNS before: %u.%u.%u.%u / %u.%u.%u.%u\n",
+                dns0[0], dns0[1], dns0[2], dns0[3],
+                dns1[0], dns1[1], dns1[2], dns1[3]);
+
+  // Force known-good public resolvers to avoid flaky DHCP DNS on embedded clients.
+  WiFi.setDNS(IPAddress(1, 1, 1, 1), IPAddress(8, 8, 8, 8));
+
+  dns0 = WiFi.dnsIP(0);
+  dns1 = WiFi.dnsIP(1);
+  Serial.printf("[WiFi] DNS after:  %u.%u.%u.%u / %u.%u.%u.%u\n",
+                dns0[0], dns0[1], dns0[2], dns0[3],
+                dns1[0], dns1[1], dns1[2], dns1[3]);
+}
+
+static bool beginSecureHttpGet(HTTPClient &http, WiFiClientSecure &client, const String &url, const char *tag = "HTTP") {
   client.setInsecure();
-
-  HTTPClient http;
-  http.begin(client, "https://www.the-race.com/category/formula-1/rss/");
-
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("HTTP error: %d\n", httpCode);
-    http.end();
+  client.setTimeout(12000);
+  client.setHandshakeTimeout(20);
+  http.setConnectTimeout(12000);
+  http.setTimeout(12000);
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+#if HALO_HTTP_DEBUG
+  Serial.printf("[%s] URL: %s\n", tag, url.c_str());
+  logDnsForUrl(tag, url);
+  Serial.printf("[%s] Heap: free=%u max=%u psram=%u\n",
+                tag,
+                (unsigned)ESP.getFreeHeap(),
+                (unsigned)ESP.getMaxAllocHeap(),
+                (unsigned)ESP.getFreePsram());
+#endif
+  if (!http.begin(client, url)) {
+#if HALO_HTTP_DEBUG
+    Serial.printf("[%s] begin() failed\n", tag);
+#endif
     return false;
   }
+  http.setUserAgent("Halo-F1/1.2.0");
+  return true;
+}
 
-  WiFiClient *stream = http.getStreamPtr();
+static String extractXmlTagContent(const String &xml, const char *tag) {
+  String openTag = "<" + String(tag) + ">";
+  String closeTag = "</" + String(tag) + ">";
+  int start = xml.indexOf(openTag);
+  if (start < 0) return "";
+  start += openTag.length();
+  int end = xml.indexOf(closeTag, start);
+  if (end < 0 || end <= start) return "";
+  String out = xml.substring(start, end);
+  out.trim();
 
-  String line;
-  bool inItem = false;
-  int lineNum = 0, itemLine = 0;
-  int itemPos = -1;
+  if (out.startsWith("<![CDATA[")) {
+    out.remove(0, 9);
+    int cdataEnd = out.indexOf("]]>");
+    if (cdataEnd >= 0) out.remove(cdataEnd);
+  }
+
+  out.replace("&amp;", "&");
+  out.replace("&quot;", "\"");
+  out.replace("&#39;", "'");
+  return out;
+}
+
+// Tries once to fetch the latest news.
+// It attempts multiple feeds and falls back to a local informational card
+// to avoid blocking loops/spam when an RSS host is unreachable from ESP32 TLS.
+bool fetchLatestNews(String &title, String &link, String &desc) {
+  static const char * NEWS_FEEDS[] = {
+    "https://www.the-race.com/category/formula-1/rss/",
+    "https://feeds.bbci.co.uk/sport/formula1/rss.xml",
+    "http://feeds.bbci.co.uk/sport/formula1/rss.xml"
+  };
 
   title = "";
   link = "";
   desc = "";
 
-  bool title_parsed = false, link_parsed = false, desc_parsed = false;
+  for (size_t i = 0; i < (sizeof(NEWS_FEEDS) / sizeof(NEWS_FEEDS[0])); i++) {
+    String requestUrl = NEWS_FEEDS[i];
 
-  while (stream->connected() && stream->available()) {
-    line = stream->readStringUntil('\n');
-    lineNum++;
-    itemPos = 0;
+    HTTPClient http;
+    WiFiClientSecure secureClient;
+    int httpCode = -1;
 
-    Serial.printf("Line %d: %s\n", lineNum, line.c_str());
-
-    if (line.indexOf("<item>") >= 0) {
-      inItem = true;
-      itemLine = lineNum;
-      itemPos = line.indexOf("<item>");
-      Serial.printf("Line of Item: %d, Index Of Item: %d\n", itemLine, itemPos);
+    if (requestUrl.startsWith("https://")) {
+      if (!beginSecureHttpGet(http, secureClient, requestUrl, "News")) {
+        continue;
+      }
+      httpCode = http.GET();
+    } else {
+      http.setConnectTimeout(12000);
+      http.setTimeout(12000);
+      http.setReuse(false);
+      http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+#if HALO_HTTP_DEBUG
+      Serial.printf("[News] URL: %s\n", requestUrl.c_str());
+#endif
+      if (!http.begin(requestUrl)) {
+#if HALO_HTTP_DEBUG
+        Serial.println("[News] begin() failed");
+#endif
+        continue;
+      }
+      http.setUserAgent("Halo-F1/1.2.0");
+      httpCode = http.GET();
     }
 
-    if (inItem) {
-      if (line.indexOf("<title>", itemPos) >= 0 && title.length() == 0) {
-        int start = line.indexOf("<title><![CDATA[", itemPos) + 16;
-        int end   = line.indexOf("]]></title>", itemPos);
-        if (end > start) title = line.substring(start, end);
-        title_parsed = true;
-        Serial.println("Title parsed");
-      }
+    logHttpResult("News", requestUrl, httpCode, &secureClient);
 
-      if (line.indexOf("<description>", itemPos) >= 0 && desc.length() == 0) {
-        int start = line.indexOf("<description><![CDATA[", itemPos) + 22;
-        int end   = line.indexOf("]]></description>", itemPos);
-        if (end > start) {
-          desc = line.substring(start, end);
-          if (desc.length() > 300) desc = desc.substring(0, 300) + "...";
+    // Some feeds return 30x. Retry once with the Location header URL.
+    if (httpCode == HTTP_CODE_MOVED_PERMANENTLY ||
+        httpCode == HTTP_CODE_FOUND ||
+        httpCode == HTTP_CODE_TEMPORARY_REDIRECT ||
+        httpCode == HTTP_CODE_PERMANENT_REDIRECT) {
+      String redirectUrl = http.getLocation();
+      http.end();
+      if (redirectUrl.length() == 0) {
+        continue;
+      }
+#if HALO_HTTP_DEBUG
+      Serial.printf("[News] Redirect: %s\n", redirectUrl.c_str());
+#endif
+      requestUrl = redirectUrl;
+
+      if (requestUrl.startsWith("https://")) {
+        if (!beginSecureHttpGet(http, secureClient, requestUrl, "News")) {
+          continue;
         }
-        desc_parsed = true;
-        Serial.println("Desc parsed");
+      } else {
+        http.setConnectTimeout(12000);
+        http.setTimeout(12000);
+        http.setReuse(false);
+        http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+#if HALO_HTTP_DEBUG
+        Serial.printf("[News] URL: %s\n", requestUrl.c_str());
+#endif
+        if (!http.begin(requestUrl)) {
+#if HALO_HTTP_DEBUG
+          Serial.println("[News] begin() failed");
+#endif
+          continue;
+        }
+        http.setUserAgent("Halo-F1/1.2.0");
       }
 
-      if (line.indexOf("<link>", itemPos) >= 0 && link.length() == 0) {
-        int start = line.indexOf("<link>", itemPos) + 6;
-        int end   = line.indexOf("</link>", itemPos);
-        if (end > start) link = line.substring(start, end);
-        link_parsed = true;
-        Serial.println("Link parsed");
-      }
+      httpCode = http.GET();
+      logHttpResult("News", requestUrl, httpCode, &secureClient);
+    }
 
-      if (link_parsed && desc_parsed && title_parsed) {
-        break; // Stop after the first item
-      }
+    if (httpCode != HTTP_CODE_OK) {
+      http.end();
+      continue;
+    }
 
+    String payload = http.getString();
+    http.end();
+    logHttpPayloadPreview("News", payload);
+    if (payload.length() == 0) continue;
+
+    int itemStart = payload.indexOf("<item");
+    if (itemStart < 0) continue;
+    int itemTagEnd = payload.indexOf('>', itemStart);
+    int itemEnd = payload.indexOf("</item>", itemTagEnd);
+    if (itemTagEnd < 0 || itemEnd < 0 || itemEnd <= itemTagEnd) continue;
+
+    String itemXml = payload.substring(itemTagEnd + 1, itemEnd);
+    title = extractXmlTagContent(itemXml, "title");
+    link = extractXmlTagContent(itemXml, "link");
+    desc = extractXmlTagContent(itemXml, "description");
+
+    if (desc.length() > 300) desc = desc.substring(0, 300) + "...";
+
+    if (link != "" && (title != "" || desc != "")) {
+      return true;
     }
   }
 
-  http.end();
-
-  if (link == "") return false;
-  if (title == "" && desc == "") return false;
-
-  Serial.println("Title: " + title);
-  Serial.println("Link: " + link);
-  Serial.println("Desc: " + desc);
-
+  // Fallback content so the UI remains usable when RSS hosts are blocked.
+  title = "F1 News Feed Unavailable";
+  link = "https://jolpi.ca/";
+  desc = "Live RSS endpoints could not be reached from this network. Core race/session APIs continue to run.";
   return true;
 }
 
-// Tries for 30 seconds to fetch the latest news (sometimes it takes more tries to get a reliable connection)
-// @TODO -- find a better way, maybe with a timer instead of while loop because it is the only blocking code we are doing
+// Non-blocking wrapper used by UI refresh.
 bool getLatestNews(String &title, String &link, String &desc) {
-  unsigned long long startTimestamp = millis();
   Serial.println("Fetching News");
-
-  while (!fetchLatestNews(title, link, desc)) {
-    Serial.println("Another cicle of news fetching");
-    delay(1000);
-    if (startTimestamp + 30000 < millis()) return false;
-  }
-
-  return true;
+  return fetchLatestNews(title, link, desc);
 }
 
 // Fetch latest session result, returns false if failed or not yet available (session ongoing or not enough time passed since the end)
@@ -112,17 +255,18 @@ bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]) {
   }
 
   WiFiClientSecure secureClient;
-  secureClient.setInsecure();          // same approach as fetchLatestNews
-
   HTTPClient http;
 
   String url = "https://api.openf1.org/v1/session_result?session_key=latest&position%3C=" + (String)DRIVERS_NUMBER;
   //http.begin("https://api.openf1.org/v1/session_result?session_key=7782&position%3C=20"); // debug
 
-  http.begin(secureClient, url);       // explicit TLS client passed
-  http.setTimeout(10000); 
+  if (!beginSecureHttpGet(http, secureClient, url, "Results")) {
+    Serial.println("HTTP begin() failed for Last Session Results");
+    return false;
+  }
 
   int httpCode = http.GET();
+  logHttpResult("Results", url, httpCode, &secureClient);
   if (httpCode != 200) {
     Serial.printf("HTTP request failed for Last Session Results, code: %d\n", httpCode);
     http.end();
@@ -131,6 +275,7 @@ bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]) {
 
   String payload = http.getString();
   http.end();
+  logHttpPayloadPreview("Results", payload);
 
   if (payload.substring(2,8) == "detail") return false;
 
@@ -193,6 +338,7 @@ bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]) {
 
 bool fetch_f1_driver_standings() {
   HTTPClient client;
+  WiFiClientSecure secureClient;
   JsonDocument doc;
   DeserializationError error;
   int statusCode;
@@ -200,8 +346,9 @@ bool fetch_f1_driver_standings() {
 
   // ── Driver Standings ────────────────────────────────────────────────────────
   std::string url = "https://api.jolpi.ca/ergast/f1/current/driverstandings/";
-  client.begin(url.c_str());
+  if (!beginSecureHttpGet(client, secureClient, url.c_str(), "Standings")) return false;
   statusCode = client.GET();
+  logHttpResult("Standings", url.c_str(), statusCode, &secureClient);
   if (statusCode != 200) { client.end(); return false; }
   error = deserializeJson(doc, client.getStream());
   client.end();
@@ -246,8 +393,9 @@ bool fetch_f1_driver_standings() {
     // Also populate team_standings here so we don't need to fetch it again later.
     doc.clear();
     url = "https://api.jolpi.ca/ergast/f1/current/constructors/";
-    client.begin(url.c_str());
+    if (!beginSecureHttpGet(client, secureClient, url.c_str(), "Standings")) return false;
     statusCode = client.GET();
+    logHttpResult("Standings", url.c_str(), statusCode, &secureClient);
     if (statusCode != 200) { client.end(); return false; }
     error = deserializeJson(doc, client.getStream());
     client.end();
@@ -271,8 +419,10 @@ bool fetch_f1_driver_standings() {
       JsonDocument ctorDriverDoc;
       std::string  ctorDriverUrl = "https://api.jolpi.ca/ergast/f1/current/constructors/"
                                    + std::string(ctorId.c_str()) + "/drivers/";
-      client.begin(ctorDriverUrl.c_str());
-      if (client.GET() == 200) {
+      if (!beginSecureHttpGet(client, secureClient, ctorDriverUrl.c_str(), "Standings")) return false;
+      statusCode = client.GET();
+      logHttpResult("Standings", ctorDriverUrl.c_str(), statusCode, &secureClient);
+      if (statusCode == 200) {
         deserializeJson(ctorDriverDoc, client.getStream());
         JsonArray ctorDrivers = ctorDriverDoc["MRData"]["DriverTable"]["Drivers"].as<JsonArray>();
         for (JsonObject d : ctorDrivers) {
@@ -290,8 +440,9 @@ bool fetch_f1_driver_standings() {
     // Step 2: fetch the full driver list and resolve constructor via the map
     doc.clear();
     url = "https://api.jolpi.ca/ergast/f1/current/drivers/";
-    client.begin(url.c_str());
+    if (!beginSecureHttpGet(client, secureClient, url.c_str(), "Standings")) return false;
     statusCode = client.GET();
+    logHttpResult("Standings", url.c_str(), statusCode, &secureClient);
     if (statusCode != 200) { client.end(); return false; }
     error = deserializeJson(doc, client.getStream());
     client.end();
@@ -330,8 +481,9 @@ bool fetch_f1_driver_standings() {
   } else {
     doc.clear();
     url = "https://api.jolpi.ca/ergast/f1/current/constructorstandings/";
-    client.begin(url.c_str());
+    if (!beginSecureHttpGet(client, secureClient, url.c_str(), "Standings")) return false;
     statusCode = client.GET();
+    logHttpResult("Standings", url.c_str(), statusCode, &secureClient);
     if (statusCode != 200) { client.end(); return false; }
     error = deserializeJson(doc, client.getStream());
     client.end();
@@ -356,8 +508,9 @@ bool fetch_f1_driver_standings() {
       // ── Fallback (edge case: driver standings exist but constructor don't) ─
       doc.clear();
       url = "https://api.jolpi.ca/ergast/f1/current/constructors/";
-      client.begin(url.c_str());
+      if (!beginSecureHttpGet(client, secureClient, url.c_str(), "Standings")) return false;
       statusCode = client.GET();
+      logHttpResult("Standings", url.c_str(), statusCode, &secureClient);
       if (statusCode != 200) { client.end(); return false; }
       error = deserializeJson(doc, client.getStream());
       client.end();
@@ -381,17 +534,27 @@ bool fetch_f1_driver_standings() {
 
 // Fetch next race infos and loads them into the given "NextRaceInfo" type struct or returns false on fail
 bool getNextRaceInfo(NextRaceInfo &info) {
+    WiFiClientSecure secureClient;
     HTTPClient http;
     //http.begin("https://api.jolpi.ca/ergast/f1/2026/2/races/"); //sprint weekend for testing purposes
-    http.begin("https://api.jolpi.ca/ergast/f1/current/next/races/");
+    String url = "https://api.jolpi.ca/ergast/f1/current/next/races/";
+    if (!beginSecureHttpGet(http, secureClient, url, "NextRace")) {
+      Serial.println("HTTP begin() failed for next race call");
+      return false;
+    }
     int httpCode = http.GET();
+    logHttpResult("NextRace", url, httpCode, &secureClient);
 
     if (httpCode == HTTP_CODE_MOVED_PERMANENTLY || httpCode == HTTP_CODE_FOUND) {
       String newUrl = http.getLocation(); // this gives the "Location" header from the redirect
       Serial.println("Redirect to: " + newUrl);
       http.end(); // close the previous connection
-      http.begin(newUrl);
+      if (!beginSecureHttpGet(http, secureClient, newUrl, "NextRace")) {
+        Serial.println("HTTP begin() failed for redirected next race call");
+        return false;
+      }
       httpCode = http.GET();
+      logHttpResult("NextRace", newUrl, httpCode, &secureClient);
     }
 
     if (httpCode != 200) {
@@ -402,6 +565,7 @@ bool getNextRaceInfo(NextRaceInfo &info) {
 
     String payload = http.getString();
     http.end();
+    logHttpPayloadPreview("NextRace", payload);
 
     JsonDocument doc;
 
@@ -452,6 +616,7 @@ bool getNextRaceInfo(NextRaceInfo &info) {
 // Runs with a lvgl timer, fetches driver standings and next race infos (baseline F1 APIs)
 void update_f1_api(lv_timer_t *timer) {
   if (!fetch_f1_driver_standings()) {
+    Serial.println("[F1 API] Failed fetching standings.");
     return;
   }
 
@@ -475,6 +640,8 @@ void update_f1_api(lv_timer_t *timer) {
       // fetchWeatherForRace() is self-throttled (WEATHER_REFRESH_MS = 1 h) so
       // calling it here every time update_f1_api fires (hourly) is safe.
       fetchWeatherForRace(next_race);
+  } else {
+      Serial.println("[F1 API] Failed fetching next race.");
   }
 
   //update_driver_standings_ui();
@@ -485,18 +652,39 @@ void sendStatisticData(lv_timer_t *timer) {
   String current_language = localized_text->language_name_eng;
   String offset = (String)UTCoffset;
 
+  WiFiClientSecure secureClient;
   HTTPClient http;
   String url = "https://www.we-race.it/wp-json/f1-halo/v2/sendstats?uuid=" + UUID + "&language=" + current_language + "&offset=" + offset + "&version=" + fw_version + "&flush=" + random(0, millis());
-  http.begin(url.c_str());
+  if (!beginSecureHttpGet(http, secureClient, url, "Stats")) {
+    Serial.println("HTTP begin() failed for sendStatisticData");
+    return;
+  }
 
   int httpCode = http.GET();
+  logHttpResult("Stats", url, httpCode, &secureClient);
+  if (httpCode < 0) {
+    // Some networks/routers behave differently for www/non-www routes.
+    String altUrl = url;
+    altUrl.replace("https://www.we-race.it/", "https://we-race.it/");
+    if (altUrl != url) {
+      http.end();
+      if (beginSecureHttpGet(http, secureClient, altUrl, "Stats")) {
+        httpCode = http.GET();
+        logHttpResult("Stats", altUrl, httpCode, &secureClient);
+        if (httpCode == HTTP_CODE_OK) {
+          url = altUrl;
+        }
+      }
+    }
+  }
   if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("HTTP error: %d\n", httpCode);
+    Serial.printf("[Stats] HTTP error: %d\n", httpCode);
     http.end();
     return;
   }
 
   String payload = http.getString();
+  logHttpPayloadPreview("Stats", payload);
 
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, payload);
@@ -539,7 +727,7 @@ void saveConfigCallback () {
 // Called when WiFi Access Point is activated for connection setup (first setup or connection failed)
 void configModeCallback (WiFiManager *myWiFiManager) {
   lv_screen_load(screen.wifi);
-  lv_obj_t * label3 = lv_label_create(screen.wifi);
+  lv_obj_t * label3 = lv_label_create(screen.wifi_root);
   lv_label_set_text(label3, localized_text->wifi_connection_failed);
   lv_obj_align(label3, LV_ALIGN_CENTER, 0, 50);
   lv_label_set_long_mode(label3, LV_LABEL_LONG_WRAP);
@@ -573,6 +761,7 @@ void setupWiFiManager(bool forceConfig) {
       ESP.restart();
       delay(5000);
     } else {
+      ensureStationDnsConfigured();
       update_internal_clock();
       update_f1_api(nullptr);
       update_ui(nullptr);
@@ -602,6 +791,7 @@ void setupWiFiManager(bool forceConfig) {
       ESP.restart();
       delay(5000);
     } else {
+      ensureStationDnsConfigured();
       update_internal_clock();
       update_f1_api(nullptr);
       update_ui(nullptr);

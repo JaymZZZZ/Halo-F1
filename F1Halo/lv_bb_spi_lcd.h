@@ -6,6 +6,8 @@
 #ifndef LV_BB_SPI_LCD_H
 #define LV_BB_SPI_LCD_H
 
+#include <Arduino.h>
+#include <stdint.h>
 #include <bb_spi_lcd.h>
 
 #ifdef __cplusplus
@@ -26,6 +28,8 @@ extern "C" {
  **********************/
 typedef struct {
     BB_SPI_LCD * lcd;
+    uint8_t * rotate_buf;
+    size_t rotate_buf_size;
 } lv_bb_spi_lcd_t;
 
 /**********************
