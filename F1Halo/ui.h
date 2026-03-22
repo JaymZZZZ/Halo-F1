@@ -463,6 +463,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     if (flag_container != NULL) {
         lv_obj_remove_style_all(flag_container);
         lv_obj_set_size(flag_container, COL_FLAG_W, 24);
+        lv_obj_set_style_margin_right(flag_container, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_clear_flag(flag_container, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_t *flag_icon = create_nationality_flag_icon(flag_container, nationality);
         if (flag_icon != NULL) lv_obj_center(flag_icon);
