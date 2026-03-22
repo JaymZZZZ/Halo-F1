@@ -343,7 +343,7 @@ static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const String &na
     const uint16_t luma = (uint16_t)((r * 299 + g * 587 + b * 114) / 1000);
 
     lv_label_set_text(badge, get_country_code(nationality));
-    lv_obj_set_size(badge, 24, 14);
+    lv_obj_set_size(badge, 22, 14);
     lv_obj_set_style_text_font(badge, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(badge,
@@ -381,7 +381,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
         lv_style_init(&style_standings_num_container);
         lv_style_set_bg_opa(&style_standings_num_container, LV_OPA_TRANSP);
         lv_style_set_border_width(&style_standings_num_container, 0);
-        lv_style_set_pad_gap(&style_standings_num_container, 4);
+        lv_style_set_pad_gap(&style_standings_num_container, 3);
 
         // Team color block
         lv_style_init(&style_standings_team_color);
@@ -398,8 +398,8 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
         
     }
 
-    const lv_coord_t COL_NUMBER_W = 92;
-    const lv_coord_t COL_FLAG_W = 32;
+    const lv_coord_t COL_NUMBER_W = 88;
+    const lv_coord_t COL_FLAG_W = 28;
     const lv_coord_t COL_POINTS_W = 124;
 
     // --- Row container ---
@@ -410,7 +410,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     lv_obj_set_layout(row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(row, 6, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(row, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
     // --- Driver number container ---
@@ -419,6 +419,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
         lv_obj_set_width(num_container, COL_NUMBER_W);
         lv_obj_set_height(num_container, LV_SIZE_CONTENT);
         lv_obj_add_style(num_container, &style_standings_num_container, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_margin_left(num_container, 4, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_layout(num_container, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(num_container, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(num_container, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -1097,8 +1098,8 @@ void create_or_reload_race_sessions(bool force_reload) {
   lv_coord_t row_w = (lv_coord_t)(SCREEN_WIDTH - 4);
 
   // Weather-badge column is only shown when data is available.
-  // Wider for weather_icons_18 (icon + temperature).
-  const lv_coord_t WEATHER_W = 104;
+  // Wider for split weather labels (icon + bold temperature).
+  const lv_coord_t WEATHER_W = 110;
 
   for (int i = 0; i < next_race.sessionCount; i++) {
     session = next_race.sessions[i];
@@ -1160,29 +1161,45 @@ void create_or_reload_race_sessions(bool force_reload) {
     // ── 3. Weather badge (right-side, fixed width) ───────────────────────────
     // Only rendered when Open-Meteo data has been fetched for this slot.
     if (weather_fetched && i < 10 && session_weather[i].valid) {
-        lv_obj_t* w_lbl = lv_label_create(session_row);
-
-        // Icon glyph + temperature: e.g. "☀ 22°"
-        // The icon and temperature use the same mixed weather font.
-        char w_buf[16];
-        snprintf(w_buf, sizeof(w_buf), "%s %d\xC2\xB0",
-                 getWeatherIcon(session_weather[i].wmo_code),
-                 (int)session_weather[i].temp_c);
-        lv_label_set_text(w_lbl, w_buf);
-
-        lv_obj_set_width(w_lbl, WEATHER_W);
-        lv_obj_set_height(w_lbl, LV_SIZE_CONTENT);
-        lv_label_set_long_mode(w_lbl, LV_LABEL_LONG_MODE_CLIP);
-
-        lv_obj_set_style_text_font(w_lbl,  &weather_icons_18, LV_PART_MAIN);
-        lv_obj_set_style_text_align(w_lbl, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-        lv_obj_set_style_pad_right(w_lbl,  4, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(w_lbl,     LV_OPA_TRANSP, LV_PART_MAIN);
-
         lv_color_t badge_color = is_active
             ? lv_color_white()
             : getWeatherColor(session_weather[i].wmo_code);
-        lv_obj_set_style_text_color(w_lbl, badge_color, LV_PART_MAIN);
+
+        lv_obj_t* w_wrap = lv_obj_create(session_row);
+        if (w_wrap != NULL) {
+            lv_obj_remove_style_all(w_wrap);
+            lv_obj_set_width(w_wrap, WEATHER_W);
+            lv_obj_set_height(w_wrap, LV_SIZE_CONTENT);
+            lv_obj_set_layout(w_wrap, LV_LAYOUT_FLEX);
+            lv_obj_set_flex_flow(w_wrap, LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(w_wrap,
+                                  LV_FLEX_ALIGN_END,
+                                  LV_FLEX_ALIGN_CENTER,
+                                  LV_FLEX_ALIGN_CENTER);
+            lv_obj_set_style_pad_column(w_wrap, 4, LV_PART_MAIN);
+            lv_obj_clear_flag(w_wrap, LV_OBJ_FLAG_SCROLLABLE);
+
+            lv_obj_t* w_icon = lv_label_create(w_wrap);
+            if (w_icon != NULL) {
+                lv_label_set_text(w_icon, getWeatherIcon(session_weather[i].wmo_code));
+                lv_obj_set_style_text_font(w_icon, &weather_icons_18, LV_PART_MAIN);
+                lv_obj_set_style_text_color(w_icon, badge_color, LV_PART_MAIN);
+                lv_obj_set_style_bg_opa(w_icon, LV_OPA_TRANSP, LV_PART_MAIN);
+            }
+
+            lv_obj_t* w_temp = lv_label_create(w_wrap);
+            if (w_temp != NULL) {
+                char t_buf[10];
+                snprintf(t_buf, sizeof(t_buf), "%d\xC2\xB0", (int)session_weather[i].temp_c);
+                lv_label_set_text(w_temp, t_buf);
+                lv_obj_set_style_text_font(w_temp, &montserrat_18, LV_PART_MAIN);
+                lv_obj_set_style_text_color(w_temp, badge_color, LV_PART_MAIN);
+                lv_obj_set_style_text_outline_stroke_width(w_temp, 1, LV_PART_MAIN);
+                lv_obj_set_style_text_outline_stroke_opa(w_temp, LV_OPA_80, LV_PART_MAIN);
+                lv_obj_set_style_text_outline_stroke_color(w_temp, badge_color, LV_PART_MAIN);
+                lv_obj_set_style_bg_opa(w_temp, LV_OPA_TRANSP, LV_PART_MAIN);
+            }
+        }
     }
   }
 
