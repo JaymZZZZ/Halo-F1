@@ -51,7 +51,7 @@ static unsigned long  last_weather_fetch_ms = 0;
 //   95,96,99 → thunderstorm
 
 // Returns the UTF-8 FontAwesome glyph string for a WMO weather code.
-// Symbols are defined in F1Halo.ino and rendered with weather_icons_16.
+// Symbols are defined in F1Halo.ino and rendered with weather_icons_18.
 const char* getWeatherIcon(uint8_t code) {
     if (code == 0)        return WX_SYMBOL_SUN;
     if (code <= 2)        return WX_SYMBOL_CLOUD_SUN;

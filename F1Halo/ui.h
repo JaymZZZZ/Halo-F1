@@ -1097,8 +1097,8 @@ void create_or_reload_race_sessions(bool force_reload) {
   lv_coord_t row_w = (lv_coord_t)(SCREEN_WIDTH - 4);
 
   // Weather-badge column is only shown when data is available.
-  // Slightly wider for the larger weather icon+temperature font.
-  const lv_coord_t WEATHER_W = 96;
+  // Wider for weather_icons_18 (icon + temperature).
+  const lv_coord_t WEATHER_W = 104;
 
   for (int i = 0; i < next_race.sessionCount; i++) {
     session = next_race.sessions[i];
@@ -1174,7 +1174,7 @@ void create_or_reload_race_sessions(bool force_reload) {
         lv_obj_set_height(w_lbl, LV_SIZE_CONTENT);
         lv_label_set_long_mode(w_lbl, LV_LABEL_LONG_MODE_CLIP);
 
-        lv_obj_set_style_text_font(w_lbl,  &weather_icons_16, LV_PART_MAIN);
+        lv_obj_set_style_text_font(w_lbl,  &weather_icons_18, LV_PART_MAIN);
         lv_obj_set_style_text_align(w_lbl, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
         lv_obj_set_style_pad_right(w_lbl,  4, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(w_lbl,     LV_OPA_TRANSP, LV_PART_MAIN);
