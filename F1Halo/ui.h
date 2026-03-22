@@ -399,7 +399,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     }
 
     const lv_coord_t COL_NUMBER_W = 88;
-    const lv_coord_t COL_FLAG_W = 28;
+    const lv_coord_t COL_FLAG_W = 24;
     const lv_coord_t COL_POINTS_W = 124;
 
     // --- Row container ---
@@ -410,7 +410,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     lv_obj_set_layout(row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(row, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(row, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
     // --- Driver number container ---
@@ -419,7 +419,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
         lv_obj_set_width(num_container, COL_NUMBER_W);
         lv_obj_set_height(num_container, LV_SIZE_CONTENT);
         lv_obj_add_style(num_container, &style_standings_num_container, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_margin_left(num_container, 4, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_margin_left(num_container, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_layout(num_container, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(num_container, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(num_container, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
