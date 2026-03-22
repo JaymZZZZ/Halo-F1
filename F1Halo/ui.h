@@ -358,32 +358,6 @@ static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const String &na
     return badge;
 }
 
-static lv_obj_t *create_team_logo_badge(lv_obj_t *parent, const String &team) {
-    lv_obj_t *badge = lv_label_create(parent);
-    if (badge == NULL) return NULL;
-    lv_obj_set_size(badge, 38, 16);
-
-    uint32_t team_color = get_team_color(team);
-    uint8_t r = (team_color >> 16) & 0xFF;
-    uint8_t g = (team_color >> 8) & 0xFF;
-    uint8_t b = team_color & 0xFF;
-    uint16_t luma = (uint16_t)((r * 299 + g * 587 + b * 114) / 1000);
-
-    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(badge, lv_color_hex(team_color), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(badge, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(badge, lv_color_hex(0x555555), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(badge, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(badge, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_label_set_text(badge, get_team_short_code(team));
-    lv_obj_set_style_text_font(badge, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(badge,
-                                luma > 150 ? lv_color_black() : lv_color_white(),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
-    return badge;
-}
-
 lv_obj_t* create_standings_row(lv_obj_t *parent,
                             const String &number,
                             const String &name,
@@ -424,9 +398,8 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
         
     }
 
-    const lv_coord_t COL_NUMBER_W = 84;
+    const lv_coord_t COL_NUMBER_W = 92;
     const lv_coord_t COL_FLAG_W = 32;
-    const lv_coord_t COL_TEAM_W = 46;
     const lv_coord_t COL_POINTS_W = 124;
 
     // --- Row container ---
@@ -457,14 +430,30 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
             lv_obj_set_style_text_font(lbl_number, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
         }
 
-        // Team color rectangle
+        // Team color box with short-code badge
         lv_obj_t *team_color = lv_obj_create(num_container);
         if (team_color != NULL) {
-            lv_obj_set_size(team_color, 12, 30);
+            const uint32_t team_color_hex = get_team_color(team);
+            const uint8_t r = (team_color_hex >> 16) & 0xFF;
+            const uint8_t g = (team_color_hex >> 8) & 0xFF;
+            const uint8_t b = team_color_hex & 0xFF;
+            const uint16_t luma = (uint16_t)((r * 299 + g * 587 + b * 114) / 1000);
+
+            lv_obj_set_size(team_color, 38, 24);
             lv_obj_add_style(team_color, &style_standings_team_color, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_color(team_color, lv_color_hex(get_team_color(team)),
+            lv_obj_set_style_bg_color(team_color, lv_color_hex(team_color_hex),
                                       LV_PART_MAIN | LV_STATE_DEFAULT); // dynamic per row
             lv_obj_remove_flag(team_color, LV_OBJ_FLAG_SCROLLABLE);
+
+            lv_obj_t *team_label = lv_label_create(team_color);
+            if (team_label != NULL) {
+                lv_label_set_text(team_label, get_team_short_code(team));
+                lv_obj_set_style_text_font(team_label, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
+                lv_obj_set_style_text_color(team_label,
+                                            luma > 150 ? lv_color_black() : lv_color_white(),
+                                            LV_PART_MAIN | LV_STATE_DEFAULT);
+                lv_obj_center(team_label);
+            }
         }
     }
 
@@ -476,16 +465,6 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
         lv_obj_clear_flag(flag_container, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_t *flag_icon = create_nationality_flag_icon(flag_container, nationality);
         if (flag_icon != NULL) lv_obj_center(flag_icon);
-    }
-
-    // --- Team logo fixed-width column ---
-    lv_obj_t *team_logo_container = lv_obj_create(row);
-    if (team_logo_container != NULL) {
-        lv_obj_remove_style_all(team_logo_container);
-        lv_obj_set_size(team_logo_container, COL_TEAM_W, 18);
-        lv_obj_clear_flag(team_logo_container, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_t *team_logo = create_team_logo_badge(team_logo_container, team);
-        if (team_logo != NULL) lv_obj_center(team_logo);
     }
 
     // --- Name + surname label ---
@@ -1119,7 +1098,7 @@ void create_or_reload_race_sessions(bool force_reload) {
 
   // Weather-badge column is only shown when data is available.
   // Slightly wider for the larger weather icon+temperature font.
-  const lv_coord_t WEATHER_W = 84;
+  const lv_coord_t WEATHER_W = 96;
 
   for (int i = 0; i < next_race.sessionCount; i++) {
     session = next_race.sessions[i];
@@ -1195,7 +1174,7 @@ void create_or_reload_race_sessions(bool force_reload) {
         lv_obj_set_height(w_lbl, LV_SIZE_CONTENT);
         lv_label_set_long_mode(w_lbl, LV_LABEL_LONG_MODE_CLIP);
 
-        lv_obj_set_style_text_font(w_lbl,  &weather_icons_14, LV_PART_MAIN);
+        lv_obj_set_style_text_font(w_lbl,  &weather_icons_16, LV_PART_MAIN);
         lv_obj_set_style_text_align(w_lbl, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
         lv_obj_set_style_pad_right(w_lbl,  4, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(w_lbl,     LV_OPA_TRANSP, LV_PART_MAIN);
