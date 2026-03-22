@@ -81,7 +81,7 @@ struct NightModeTimes {
 
 NightModeTimes nightModeTimes = {23, 0, 8, 0};
 
-bool nightModeActive = true;
+bool nightModeActive = false;
 
 struct DriverStanding {
   String position;
@@ -158,7 +158,7 @@ lv_obj_t * sessions_container, * standings_container;
 
 // Settings stuff
 lv_obj_t * language_selector; // localized_text defined in localized_strings.h
-lv_obj_t * no_spoiler_switch; bool noSpoilerModeActive = true;
+lv_obj_t * no_spoiler_switch; bool noSpoilerModeActive = false;
 lv_obj_t * brightness_slider, *night_brightness_slider; uint8_t brightness = 255, night_brightness = 30;
 
 // No-Spoiler lift state (not a setting — temporary per-session override)
@@ -217,7 +217,7 @@ void setup() {
   esp_err_t btRelease = esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
   (void)btRelease;
 
-  localized_text = &language_strings_en;
+  localized_text = &language_strings_en_us;
 
   // Initialise LVGL
   lv_init();

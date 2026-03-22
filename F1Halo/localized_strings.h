@@ -544,4 +544,4 @@ const LanguageEntry languages[] = {
 };
 
 const size_t languageCount = sizeof(languages) / sizeof(languages[0]);
-const LanguageStrings *localized_text = &language_strings_en;
+const LanguageStrings *localized_text = &language_strings_en_us;
