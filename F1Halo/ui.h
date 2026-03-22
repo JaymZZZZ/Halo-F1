@@ -313,106 +313,55 @@ static const char *get_country_code(const String &nationality) {
     return "--";
 }
 
-static void add_flag_band(lv_obj_t *parent,
-                          lv_coord_t x, lv_coord_t y,
-                          lv_coord_t w, lv_coord_t h,
-                          uint32_t color_hex) {
-    lv_obj_t *band = lv_obj_create(parent);
-    lv_obj_remove_style_all(band);
-    lv_obj_set_size(band, w, h);
-    lv_obj_set_pos(band, x, y);
-    lv_obj_clear_flag(band, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_opa(band, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(band, lv_color_hex(color_hex), LV_PART_MAIN | LV_STATE_DEFAULT);
+static uint32_t get_nationality_badge_color(const String &nationality) {
+    if (nationality == "British")       return 0x1C2B5A;
+    if (nationality == "Dutch")         return 0x21468B;
+    if (nationality == "Monegasque")    return 0xCE1126;
+    if (nationality == "Australian")    return 0x1C2B5A;
+    if (nationality == "French")        return 0x0055A4;
+    if (nationality == "Spanish")       return 0xAA151B;
+    if (nationality == "German")        return 0x1A1A1A;
+    if (nationality == "Canadian")      return 0xD80621;
+    if (nationality == "Mexican")       return 0x006847;
+    if (nationality == "Japanese")      return 0xBC002D;
+    if (nationality == "Thai")          return 0x2D2A4A;
+    if (nationality == "Chinese")       return 0xDE2910;
+    if (nationality == "Italian")       return 0x008C45;
+    if (nationality == "New Zealander") return 0x1C2B5A;
+    if (nationality == "Brazilian")     return 0x009C3B;
+    return 0x3A3A3A;
 }
 
 static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const String &nationality) {
-    const lv_coord_t w = 24;
-    const lv_coord_t h = 14;
+    lv_obj_t *badge = lv_label_create(parent);
+    if (badge == NULL) return NULL;
 
-    lv_obj_t *flag = lv_obj_create(parent);
-    lv_obj_remove_style_all(flag);
-    lv_obj_set_size(flag, w, h);
-    lv_obj_clear_flag(flag, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_opa(flag, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(flag, lv_color_hex(0x2B2B2B), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(flag, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(flag, lv_color_hex(0x666666), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(flag, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    const uint32_t bg = get_nationality_badge_color(nationality);
+    const uint8_t r = (bg >> 16) & 0xFF;
+    const uint8_t g = (bg >> 8) & 0xFF;
+    const uint8_t b = bg & 0xFF;
+    const uint16_t luma = (uint16_t)((r * 299 + g * 587 + b * 114) / 1000);
 
-    if (nationality == "French") {
-        add_flag_band(flag, 0, 0, 8, h, 0x0055A4);
-        add_flag_band(flag, 8, 0, 8, h, 0xFFFFFF);
-        add_flag_band(flag, 16, 0, 8, h, 0xEF4135);
-    } else if (nationality == "Italian") {
-        add_flag_band(flag, 0, 0, 8, h, 0x009246);
-        add_flag_band(flag, 8, 0, 8, h, 0xFFFFFF);
-        add_flag_band(flag, 16, 0, 8, h, 0xCE2B37);
-    } else if (nationality == "German") {
-        add_flag_band(flag, 0, 0, w, 5, 0x000000);
-        add_flag_band(flag, 0, 5, w, 4, 0xDD0000);
-        add_flag_band(flag, 0, 9, w, 5, 0xFFCE00);
-    } else if (nationality == "Dutch") {
-        add_flag_band(flag, 0, 0, w, 5, 0xAE1C28);
-        add_flag_band(flag, 0, 5, w, 4, 0xFFFFFF);
-        add_flag_band(flag, 0, 9, w, 5, 0x21468B);
-    } else if (nationality == "Spanish") {
-        add_flag_band(flag, 0, 0, w, 3, 0xC60B1E);
-        add_flag_band(flag, 0, 3, w, 8, 0xFFC400);
-        add_flag_band(flag, 0, 11, w, 3, 0xC60B1E);
-    } else if (nationality == "Mexican") {
-        add_flag_band(flag, 0, 0, 8, h, 0x006847);
-        add_flag_band(flag, 8, 0, 8, h, 0xFFFFFF);
-        add_flag_band(flag, 16, 0, 8, h, 0xCE1126);
-    } else if (nationality == "Japanese") {
-        add_flag_band(flag, 0, 0, w, h, 0xFFFFFF);
-        add_flag_band(flag, 9, 4, 6, 6, 0xBC002D);
-    } else if (nationality == "Canadian") {
-        add_flag_band(flag, 0, 0, 6, h, 0xD80621);
-        add_flag_band(flag, 6, 0, 12, h, 0xFFFFFF);
-        add_flag_band(flag, 18, 0, 6, h, 0xD80621);
-        add_flag_band(flag, 11, 3, 2, 8, 0xD80621);
-    } else if (nationality == "Thai") {
-        add_flag_band(flag, 0, 0, w, 2, 0xA51931);
-        add_flag_band(flag, 0, 2, w, 2, 0xFFFFFF);
-        add_flag_band(flag, 0, 4, w, 6, 0x2D2A4A);
-        add_flag_band(flag, 0, 10, w, 2, 0xFFFFFF);
-        add_flag_band(flag, 0, 12, w, 2, 0xA51931);
-    } else if (nationality == "Brazilian") {
-        add_flag_band(flag, 0, 0, w, h, 0x009C3B);
-        add_flag_band(flag, 7, 3, 10, 8, 0xFFDF00);
-        add_flag_band(flag, 10, 5, 4, 4, 0x002776);
-    } else if (nationality == "Chinese") {
-        add_flag_band(flag, 0, 0, w, h, 0xDE2910);
-        add_flag_band(flag, 3, 3, 4, 4, 0xFFDE00);
-    } else if (nationality == "Monagasque" || nationality == "Monegasque") {
-        add_flag_band(flag, 0, 0, w, 7, 0xCE1126);
-        add_flag_band(flag, 0, 7, w, 7, 0xFFFFFF);
-    } else if (nationality == "British") {
-        add_flag_band(flag, 0, 0, w, h, 0x012169);
-        add_flag_band(flag, 0, 5, w, 4, 0xFFFFFF);
-        add_flag_band(flag, 10, 0, 4, h, 0xFFFFFF);
-        add_flag_band(flag, 0, 6, w, 2, 0xC8102E);
-        add_flag_band(flag, 11, 0, 2, h, 0xC8102E);
-    } else if (nationality == "Australian" || nationality == "New Zealander") {
-        add_flag_band(flag, 0, 0, w, h, 0x012169);
-        add_flag_band(flag, 3, 3, 4, 4, 0xFFFFFF);
-    } else {
-        lv_obj_t *code = lv_label_create(flag);
-        lv_label_set_text(code, get_country_code(nationality));
-        lv_obj_set_style_text_font(code, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_text_color(code, lv_color_white(), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_center(code);
-    }
-
-    return flag;
+    lv_label_set_text(badge, get_country_code(nationality));
+    lv_obj_set_size(badge, 24, 14);
+    lv_obj_set_style_text_font(badge, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(badge,
+                                luma > 150 ? lv_color_black() : lv_color_white(),
+                                LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(badge, lv_color_hex(bg), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(badge, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(badge, lv_color_hex(0x666666), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(badge, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(badge, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    return badge;
 }
 
 static lv_obj_t *create_team_logo_badge(lv_obj_t *parent, const String &team) {
-    lv_obj_t *badge = lv_obj_create(parent);
-    lv_obj_remove_style_all(badge);
+    lv_obj_t *badge = lv_label_create(parent);
+    if (badge == NULL) return NULL;
     lv_obj_set_size(badge, 38, 16);
-    lv_obj_clear_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
 
     uint32_t team_color = get_team_color(team);
     uint8_t r = (team_color >> 16) & 0xFF;
@@ -425,14 +374,13 @@ static lv_obj_t *create_team_logo_badge(lv_obj_t *parent, const String &team) {
     lv_obj_set_style_border_width(badge, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(badge, lv_color_hex(0x555555), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_radius(badge, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    lv_obj_t *lbl = lv_label_create(badge);
-    lv_label_set_text(lbl, get_team_short_code(team));
-    lv_obj_set_style_text_font(lbl, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(lbl,
+    lv_obj_set_style_pad_all(badge, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(badge, get_team_short_code(team));
+    lv_obj_set_style_text_font(badge, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(badge,
                                 luma > 150 ? lv_color_black() : lv_color_white(),
                                 LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_center(lbl);
     return badge;
 }
 
@@ -483,6 +431,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
 
     // --- Row container ---
     lv_obj_t *row = lv_obj_create(parent);
+    if (row == NULL) return NULL;
     lv_obj_set_size(row, LV_PCT(100), 46);
     lv_obj_add_style(row, &style_standings_row, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_layout(row, LV_LAYOUT_FLEX);
@@ -493,60 +442,74 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
 
     // --- Driver number container ---
     lv_obj_t *num_container = lv_obj_create(row);
-    lv_obj_set_width(num_container, COL_NUMBER_W);
-    lv_obj_set_height(num_container, LV_SIZE_CONTENT);
-    lv_obj_add_style(num_container, &style_standings_num_container, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_layout(num_container, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(num_container, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(num_container, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    if (num_container != NULL) {
+        lv_obj_set_width(num_container, COL_NUMBER_W);
+        lv_obj_set_height(num_container, LV_SIZE_CONTENT);
+        lv_obj_add_style(num_container, &style_standings_num_container, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_layout(num_container, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(num_container, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(num_container, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    // Driver number label
-    lv_obj_t *lbl_number = lv_label_create(num_container);
-    lv_label_set_text(lbl_number, number.c_str());
-    lv_obj_set_style_text_font(lbl_number, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
+        // Driver number label
+        lv_obj_t *lbl_number = lv_label_create(num_container);
+        if (lbl_number != NULL) {
+            lv_label_set_text(lbl_number, number.c_str());
+            lv_obj_set_style_text_font(lbl_number, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
 
-    // Team color rectangle
-    lv_obj_t *team_color = lv_obj_create(num_container);
-    lv_obj_set_size(team_color, 12, 30);
-    lv_obj_add_style(team_color, &style_standings_team_color, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(team_color, lv_color_hex(get_team_color(team)),
-                              LV_PART_MAIN | LV_STATE_DEFAULT); // dynamic per row
-    lv_obj_remove_flag(team_color, LV_OBJ_FLAG_SCROLLABLE);
+        // Team color rectangle
+        lv_obj_t *team_color = lv_obj_create(num_container);
+        if (team_color != NULL) {
+            lv_obj_set_size(team_color, 12, 30);
+            lv_obj_add_style(team_color, &style_standings_team_color, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_bg_color(team_color, lv_color_hex(get_team_color(team)),
+                                      LV_PART_MAIN | LV_STATE_DEFAULT); // dynamic per row
+            lv_obj_remove_flag(team_color, LV_OBJ_FLAG_SCROLLABLE);
+        }
+    }
 
     // --- Nationality flag fixed-width column ---
     lv_obj_t *flag_container = lv_obj_create(row);
-    lv_obj_remove_style_all(flag_container);
-    lv_obj_set_size(flag_container, COL_FLAG_W, 18);
-    lv_obj_clear_flag(flag_container, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *flag_icon = create_nationality_flag_icon(flag_container, nationality);
-    lv_obj_center(flag_icon);
+    if (flag_container != NULL) {
+        lv_obj_remove_style_all(flag_container);
+        lv_obj_set_size(flag_container, COL_FLAG_W, 18);
+        lv_obj_clear_flag(flag_container, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_t *flag_icon = create_nationality_flag_icon(flag_container, nationality);
+        if (flag_icon != NULL) lv_obj_center(flag_icon);
+    }
 
     // --- Team logo fixed-width column ---
     lv_obj_t *team_logo_container = lv_obj_create(row);
-    lv_obj_remove_style_all(team_logo_container);
-    lv_obj_set_size(team_logo_container, COL_TEAM_W, 18);
-    lv_obj_clear_flag(team_logo_container, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *team_logo = create_team_logo_badge(team_logo_container, team);
-    lv_obj_center(team_logo);
+    if (team_logo_container != NULL) {
+        lv_obj_remove_style_all(team_logo_container);
+        lv_obj_set_size(team_logo_container, COL_TEAM_W, 18);
+        lv_obj_clear_flag(team_logo_container, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_t *team_logo = create_team_logo_badge(team_logo_container, team);
+        if (team_logo != NULL) lv_obj_center(team_logo);
+    }
 
     // --- Name + surname label ---
     String fullname = name;
     if (surname.length() > 0) fullname += " " + surname;
     lv_obj_t *lbl_name = lv_label_create(row);
-    lv_label_set_text(lbl_name, fullname.c_str());
-    lv_obj_set_width(lbl_name, 0);
-    lv_obj_set_flex_grow(lbl_name, 1);
-    lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_set_style_text_font(lbl_name, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_add_style(lbl_name, &style_standings_lbl_name, LV_PART_MAIN | LV_STATE_DEFAULT);
+    if (lbl_name != NULL) {
+        lv_label_set_text(lbl_name, fullname.c_str());
+        lv_obj_set_width(lbl_name, 0);
+        lv_obj_set_flex_grow(lbl_name, 1);
+        lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_MODE_CLIP);
+        lv_obj_set_style_text_font(lbl_name, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_add_style(lbl_name, &style_standings_lbl_name, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
 
     // --- Points label ---
     lv_obj_t *lbl_points = lv_label_create(row);
-    lv_label_set_text_fmt(lbl_points, "%s", points.c_str());
-    lv_obj_set_width(lbl_points, COL_POINTS_W);
-    lv_obj_set_style_text_font(lbl_points, &HALO_FONT_DETAIL, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_label_set_long_mode(lbl_points, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_add_style(lbl_points, &style_standings_lbl_points, LV_PART_MAIN | LV_STATE_DEFAULT);
+    if (lbl_points != NULL) {
+        lv_label_set_text_fmt(lbl_points, "%s", points.c_str());
+        lv_obj_set_width(lbl_points, COL_POINTS_W);
+        lv_obj_set_style_text_font(lbl_points, &HALO_FONT_DETAIL, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_label_set_long_mode(lbl_points, LV_LABEL_LONG_MODE_CLIP);
+        lv_obj_add_style(lbl_points, &style_standings_lbl_points, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
 
     return row;
 }
@@ -571,6 +534,8 @@ static int get_standings_page_size(lv_obj_t *container) {
     const int row_budget_h = 48;
     int rows = (int)container_h / row_budget_h;
     if (rows < STANDINGS_PAGE_SIZE) rows = STANDINGS_PAGE_SIZE;
+    // Keep memory headroom for low-heap conditions on ESP32-S3.
+    if (rows > 6) rows = 6;
     if (rows > TOTAL_DRIVERS) rows = TOTAL_DRIVERS;
     return rows;
 }
@@ -579,6 +544,17 @@ static void populate_standings(lv_obj_t * container, int offset) {
     //Serial.println("Populating standings");
 
     int page_size = get_standings_page_size(container);
+    lv_coord_t container_h = lv_obj_get_height(container);
+    if (container_h <= 0) {
+        lv_obj_update_layout(container);
+        container_h = lv_obj_get_height(container);
+    }
+    lv_coord_t row_h = 46;
+    if (container_h > 0 && page_size > 0) {
+        lv_coord_t computed = (container_h - ((page_size - 1) * 2)) / page_size;
+        if (computed > row_h) row_h = computed;
+    }
+
     for (int i = 0; i < page_size; i++) {
         int idx = offset + i;
         if (idx >= TOTAL_DRIVERS) break;
@@ -593,6 +569,7 @@ static void populate_standings(lv_obj_t * container, int offset) {
             points.c_str(),
             current_season.driver_standings[idx].constructorId
         );
+        if (row != NULL) lv_obj_set_height(row, row_h);
     }
 
     //Serial.println("Populating standings DONE");
@@ -608,6 +585,17 @@ void animate_results(lv_obj_t * container) {
 
 static void populate_results(lv_obj_t * container, int offset) {
     int page_size = get_standings_page_size(container);
+    lv_coord_t container_h = lv_obj_get_height(container);
+    if (container_h <= 0) {
+        lv_obj_update_layout(container);
+        container_h = lv_obj_get_height(container);
+    }
+    lv_coord_t row_h = 46;
+    if (container_h > 0 && page_size > 0) {
+        lv_coord_t computed = (container_h - ((page_size - 1) * 2)) / page_size;
+        if (computed > row_h) row_h = computed;
+    }
+
     if (current_results != "Qualifying" && current_results != "Sprint Qualifying") {
       for (int i = 0; i < page_size; i++) {
         int idx = offset + i;
@@ -635,13 +623,14 @@ static void populate_results(lv_obj_t * container, int offset) {
         gap = (String) gappo;
         if (idx==0) gap = (String) formatLapTime(results[idx].duration);
 
-        create_standings_row(container,
-                             results[idx].position.c_str(),
-                             name.c_str(),
-                             "",
-                             driver->nationality,
-                             gap,
-                             driver->constructorId);
+        lv_obj_t *row = create_standings_row(container,
+                                             results[idx].position.c_str(),
+                                             name.c_str(),
+                                             "",
+                                             driver->nationality,
+                                             gap,
+                                             driver->constructorId);
+        if (row != NULL) lv_obj_set_height(row, row_h);
 
         // Initial hidden state
         /*
@@ -687,13 +676,14 @@ static void populate_results(lv_obj_t * container, int offset) {
         gap = (String) gappo;
         if (idx==0) gap = (String) formatLapTime(results[idx].quali[2]);
 
-        create_standings_row(container,
-                             results[idx].position.c_str(),
-                             name.c_str(),
-                             "",
-                             driver->nationality,
-                             gap,
-                             driver->constructorId);
+        lv_obj_t *row = create_standings_row(container,
+                                             results[idx].position.c_str(),
+                                             name.c_str(),
+                                             "",
+                                             driver->nationality,
+                                             gap,
+                                             driver->constructorId);
+        if (row != NULL) lv_obj_set_height(row, row_h);
 
         // Initial hidden state
         /*
