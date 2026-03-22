@@ -521,7 +521,8 @@ void set_custom_theme(void) {
 }
 
 lv_obj_t* create_chequered_stripe(lv_obj_t* parent) {
-    lv_coord_t screen_w = lv_disp_get_hor_res(NULL);
+    lv_coord_t screen_w = lv_obj_get_content_width(parent);
+    if (screen_w <= 0) screen_w = lv_disp_get_hor_res(NULL);
     lv_coord_t stripe_h = 8;
     lv_coord_t square_height = stripe_h / 2;  // two rows of squares
     lv_coord_t square_width = 17;  // two rows of squares
@@ -535,9 +536,8 @@ lv_obj_t* create_chequered_stripe(lv_obj_t* parent) {
     lv_obj_set_style_radius(stripe, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(stripe, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    // Number of columns needed
-    //int cols = (screen_w + square_width - 1) / (square_size * width_factor);
-    int cols = 16;
+    // Number of columns needed to fill full stripe width.
+    int cols = (screen_w + square_width - 1) / square_width;
 
     // Create only the white squares
     for (int row = 0; row < 2; row++) {
