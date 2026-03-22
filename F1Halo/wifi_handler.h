@@ -342,6 +342,7 @@ bool fetch_f1_driver_standings() {
       current_season.driver_standings[i].number        = driver["permanentNumber"].as<String>();
       current_season.driver_standings[i].name          = driver["givenName"].as<String>();
       current_season.driver_standings[i].surname       = driver["familyName"].as<String>();
+      current_season.driver_standings[i].nationality   = driver["nationality"].as<String>();
       current_season.driver_standings[i].constructor   = constructor["name"].as<String>();
       current_season.driver_standings[i].constructorId = constructor["constructorId"].as<String>();
       if (current_season.driver_standings[i].name == "Andrea Kimi")
@@ -430,6 +431,7 @@ bool fetch_f1_driver_standings() {
       current_season.driver_standings[i].points        = "0";
       current_season.driver_standings[i].name          = driver["givenName"].as<String>();
       current_season.driver_standings[i].surname       = driver["familyName"].as<String>();
+      current_season.driver_standings[i].nationality   = driver["nationality"].as<String>();
       current_season.driver_standings[i].number        = driver["familyName"].as<String>() == "Lindblad" ? "41" : driver["permanentNumber"].as<String>();
       current_season.driver_standings[i].constructor   = ctorName;
       current_season.driver_standings[i].constructorId = ctorId;

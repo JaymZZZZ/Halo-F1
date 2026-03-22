@@ -90,6 +90,7 @@ struct DriverStanding {
   String number;
   String name;
   String surname;
+  String nationality;
   String constructor;
   String constructorId;
 };
