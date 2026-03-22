@@ -99,10 +99,7 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
     }
 
     // ── Validate coordinates populated by getNextRaceInfo() ────────────────
-    if (race.lat == 0.0f && race.lon == 0.0f) {
-        Serial.println("[Weather] Circuit coordinates not yet available, skipping.");
-        return false;
-    }
+    if (race.lat == 0.0f && race.lon == 0.0f) return false;
     float lat = race.lat;
     float lon = race.lon;
 
@@ -122,8 +119,6 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
         startDate.c_str(),
         endDate.c_str());
 
-    Serial.printf("[Weather] Fetching: %s\n", url);
-
     // ── HTTP request ────────────────────────────────────────────────────────
     WiFiClientSecure secureClient;
     secureClient.setInsecure();   // same pattern as getLastSessionResults()
@@ -134,8 +129,6 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
 
     int httpCode = http.GET();
     if (httpCode != 200) {
-        Serial.printf("[Weather] HTTP error: %d — %s\n",
-                      httpCode, http.getString().c_str());
         http.end();
         return false;
     }
@@ -147,25 +140,16 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
     String payload = http.getString();
     http.end();
 
-    Serial.printf("[Weather] Payload length: %d\n", payload.length());
-
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);
 
-    if (err) {
-        Serial.printf("[Weather] JSON parse error: %s\n", err.c_str());
-        return false;
-    }
+    if (err) return false;
 
     JsonArray times  = doc["hourly"]["time"].as<JsonArray>();
     JsonArray codes  = doc["hourly"]["weather_code"].as<JsonArray>();
     JsonArray temps  = doc["hourly"]["temperature_2m"].as<JsonArray>();
 
-    if (times.isNull() || codes.isNull() || temps.isNull()) {
-        Serial.printf("[Weather] Missing hourly arrays. Keys present: %s\n",
-                      payload.substring(0, 120).c_str());
-        return false;
-    }
+    if (times.isNull() || codes.isNull() || temps.isNull()) return false;
 
     // ── Reset all slots then fill matched ones ──────────────────────────────
     for (int s = 0; s < 10; s++) {
@@ -205,24 +189,13 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
                 session_weather[s].wmo_code = (uint8_t)codes[h].as<int>();
                 session_weather[s].temp_c   = (int8_t) temps[h].as<float>();
                 session_weather[s].valid    = true;
-                Serial.printf("[Weather] %s → %s  WMO=%d  %d°C\n",
-                    race.sessions[s].name.c_str(),
-                    target_cstr,
-                    session_weather[s].wmo_code,
-                    (int)session_weather[s].temp_c);
                 break;
             }
-        }
-
-        if (!session_weather[s].valid) {
-            Serial.printf("[Weather] No match for session %s at %s\n",
-                race.sessions[s].name.c_str(), target_cstr);
         }
     }
 
     weather_fetched       = true;
     last_weather_fetch_ms = millis();
-    Serial.println("[Weather] Fetch complete.");
     return true;
 }
 

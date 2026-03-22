@@ -1,111 +1,232 @@
-// Tries once to fetch the latest news
-bool fetchLatestNews(String &title, String &link, String &desc) {
+static inline void news_strip_markup(String &value) {
+  value.replace("<![CDATA[", "");
+  value.replace("]]>", "");
+  value.replace("&amp;", "&");
+  value.replace("&quot;", "\"");
+  value.replace("&#39;", "'");
+  value.trim();
+}
+
+static bool news_extract_tag_body(const String &xml, const char *tag, String &out) {
+  String openPrefix = "<" + String(tag);
+  int open = xml.indexOf(openPrefix);
+  if (open < 0) return false;
+
+  int openEnd = xml.indexOf('>', open);
+  if (openEnd < 0) return false;
+
+  String closeTag = "</" + String(tag) + ">";
+  int close = xml.indexOf(closeTag, openEnd + 1);
+  if (close <= openEnd) return false;
+
+  out = xml.substring(openEnd + 1, close);
+  news_strip_markup(out);
+  return out.length() > 0;
+}
+
+static bool news_extract_link_href(const String &xml, String &out) {
+  int pos = xml.indexOf("<link");
+  while (pos >= 0) {
+    int end = xml.indexOf('>', pos);
+    if (end < 0) break;
+
+    int hrefPos = xml.indexOf("href=\"", pos);
+    if (hrefPos > 0 && hrefPos < end) {
+      hrefPos += 6;
+      int hrefEnd = xml.indexOf('"', hrefPos);
+      if (hrefEnd > hrefPos && hrefEnd <= end) {
+        out = xml.substring(hrefPos, hrefEnd);
+        news_strip_markup(out);
+        return out.length() > 0;
+      }
+    }
+
+    pos = xml.indexOf("<link", end + 1);
+  }
+  return false;
+}
+
+static bool news_decode_chunked_body(const String &chunked, String &decoded) {
+  decoded = "";
+  int pos = 0;
+  while (pos < (int)chunked.length()) {
+    int lineEnd = chunked.indexOf("\r\n", pos);
+    if (lineEnd < 0) return false;
+
+    String lenHex = chunked.substring(pos, lineEnd);
+    int semi = lenHex.indexOf(';');
+    if (semi >= 0) lenHex = lenHex.substring(0, semi);
+    lenHex.trim();
+
+    int chunkLen = (int)strtol(lenHex.c_str(), nullptr, 16);
+    pos = lineEnd + 2;
+
+    if (chunkLen <= 0) return true;
+    if (pos + chunkLen > (int)chunked.length()) return false;
+
+    decoded += chunked.substring(pos, pos + chunkLen);
+    pos += chunkLen;
+
+    if (pos + 1 >= (int)chunked.length()) return false;
+    if (chunked[pos] == '\r' && chunked[pos + 1] == '\n') {
+      pos += 2;
+    } else {
+      return false;
+    }
+  }
+
+  return decoded.length() > 0;
+}
+
+static bool news_fetch_payload_raw_tls(const char *url, String &payload) {
+  String urlStr(url);
+  if (!urlStr.startsWith("https://")) return false;
+
+  int hostStart = 8;
+  int pathStart = urlStr.indexOf('/', hostStart);
+  String host = (pathStart >= 0) ? urlStr.substring(hostStart, pathStart) : urlStr.substring(hostStart);
+  String path = (pathStart >= 0) ? urlStr.substring(pathStart) : "/";
+
   WiFiClientSecure client;
   client.setInsecure();
+  client.setTimeout(12000);
+  if (!client.connect(host.c_str(), 443)) return false;
 
+  client.printf(
+      "GET %s HTTP/1.1\r\n"
+      "Host: %s\r\n"
+      "User-Agent: Halo-F1/1.2.0 (ESP32-S3)\r\n"
+      "Accept: application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1\r\n"
+      "Accept-Encoding: identity\r\n"
+      "Connection: close\r\n\r\n",
+      path.c_str(), host.c_str());
+
+  String response = "";
+  unsigned long t0 = millis();
+  while (millis() - t0 < 12000) {
+    while (client.available()) {
+      response += (char)client.read();
+      t0 = millis();
+    }
+    if (!client.connected()) break;
+    delay(2);
+  }
+  client.stop();
+
+  int hdrEnd = response.indexOf("\r\n\r\n");
+  if (hdrEnd < 0) return false;
+
+  String headers = response.substring(0, hdrEnd);
+  String body = response.substring(hdrEnd + 4);
+
+  if (headers.indexOf("Transfer-Encoding: chunked") >= 0 || headers.indexOf("transfer-encoding: chunked") >= 0) {
+    String decoded;
+    if (news_decode_chunked_body(body, decoded)) {
+      body = decoded;
+    }
+  }
+
+  payload = body;
+  return payload.length() > 0;
+}
+
+static bool fetchLatestNewsFromUrl(const char *url, String &title, String &link, String &desc) {
   HTTPClient http;
-  http.useHTTP10(true);
+  // Keep HTTP/1.1 for this feed; some CDNs return empty body on forced HTTP/1.0.
+  http.useHTTP10(false);
   http.setTimeout(12000);
-  http.begin(client, "https://www.the-race.com/category/formula-1/rss/");
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  http.addHeader("User-Agent", "Halo-F1/1.2.0 (ESP32-S3)");
+  http.addHeader("Accept", "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1");
+  http.addHeader("Connection", "close");
 
-  int httpCode = http.GET();
+  int httpCode = -1;
+  if (String(url).startsWith("https://")) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    http.begin(client, url);
+    httpCode = http.GET();
+  } else {
+    WiFiClient client;
+    http.begin(client, url);
+    httpCode = http.GET();
+  }
+
   if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("HTTP error: %d\n", httpCode);
     http.end();
     return false;
   }
 
-  WiFiClient *stream = http.getStreamPtr();
-
-  String line;
-  bool inItem = false;
-  int itemPos = -1;
+  String payload = http.getString();
+  http.end();
+  if (payload.length() == 0) {
+    if (!news_fetch_payload_raw_tls(url, payload)) {
+      return false;
+    }
+  }
 
   title = "";
   link = "";
   desc = "";
 
-  bool title_parsed = false, link_parsed = false, desc_parsed = false;
-
-  while (stream->connected() && stream->available()) {
-    line = stream->readStringUntil('\n');
-    itemPos = 0;
-
-    if (line.indexOf("<item>") >= 0) {
-      inItem = true;
-      itemPos = line.indexOf("<item>");
-    }
-
-    if (inItem) {
-      if (line.indexOf("<title>", itemPos) >= 0 && title.length() == 0) {
-        int start = line.indexOf("<title><![CDATA[", itemPos) + 16;
-        int end   = line.indexOf("]]></title>", itemPos);
-        if (end > start) title = line.substring(start, end);
-        title_parsed = true;
-        Serial.println("Title parsed");
-      }
-
-      if (line.indexOf("<description>", itemPos) >= 0 && desc.length() == 0) {
-        int start = line.indexOf("<description><![CDATA[", itemPos) + 22;
-        int end   = line.indexOf("]]></description>", itemPos);
-        if (end > start) {
-          desc = line.substring(start, end);
-          if (desc.length() > 300) desc = desc.substring(0, 300) + "...";
-        }
-        desc_parsed = true;
-        Serial.println("Desc parsed");
-      }
-
-      if (line.indexOf("<link>", itemPos) >= 0 && link.length() == 0) {
-        int start = line.indexOf("<link>", itemPos) + 6;
-        int end   = line.indexOf("</link>", itemPos);
-        if (end > start) link = line.substring(start, end);
-        link_parsed = true;
-        Serial.println("Link parsed");
-      }
-
-      if (link_parsed && desc_parsed && title_parsed) {
-        break; // Stop after the first item
-      }
-
+  int entryStart = payload.indexOf("<item>");
+  int entryEnd = -1;
+  if (entryStart >= 0) {
+    entryEnd = payload.indexOf("</item>", entryStart);
+    if (entryEnd < 0) entryEnd = payload.length();
+  } else {
+    int atomEntryStart = payload.indexOf("<entry");
+    if (atomEntryStart >= 0) {
+      entryStart = payload.indexOf('>', atomEntryStart);
+      if (entryStart >= 0) entryStart += 1;
+      entryEnd = payload.indexOf("</entry>", entryStart);
+      if (entryEnd < 0) entryEnd = payload.length();
     }
   }
 
-  http.end();
+  if (entryStart < 0 || entryEnd <= entryStart) return false;
 
-  if (link == "") return false;
-  if (title == "" && desc == "") return false;
+  String entry = payload.substring(entryStart, entryEnd);
 
-  Serial.println("Title: " + title);
-  Serial.println("Link: " + link);
-  Serial.println("Desc: " + desc);
+  bool gotTitle = news_extract_tag_body(entry, "title", title);
+  bool gotLink = news_extract_tag_body(entry, "link", link);
+  if (!gotLink) {
+    gotLink = news_extract_link_href(entry, link);
+  }
+  bool gotDesc = news_extract_tag_body(entry, "description", desc);
+  if (!gotDesc) gotDesc = news_extract_tag_body(entry, "summary", desc);
+  if (!gotDesc) gotDesc = news_extract_tag_body(entry, "content", desc);
+
+  if (gotDesc && desc.length() > 300) {
+    desc = desc.substring(0, 300) + "...";
+  }
+
+  return gotLink && (gotTitle || gotDesc);
+}
+
+// Tries once to fetch the latest news from the original feed URL
+bool fetchLatestNews(String &title, String &link, String &desc) {
+  title = "";
+  link = "";
+  desc = "";
+  if (!fetchLatestNewsFromUrl("https://www.the-race.com/category/formula-1/rss/", title, link, desc)) {
+    return false;
+  }
 
   return true;
 }
 
-// Tries for 30 seconds to fetch the latest news (sometimes it takes more tries to get a reliable connection)
-// @TODO -- find a better way, maybe with a timer instead of while loop because it is the only blocking code we are doing
+// Single attempt to avoid aggressive retry storms when TLS fails on constrained heap.
 bool getLatestNews(String &title, String &link, String &desc) {
-  unsigned long long startTimestamp = millis();
-  Serial.println("Fetching News");
-
-  while (!fetchLatestNews(title, link, desc)) {
-    Serial.println("Another cicle of news fetching");
-    delay(1500);
-    if (startTimestamp + 15000 < millis()) return false;
-  }
-
-  return true;
+  return fetchLatestNews(title, link, desc);
 }
 
 // Fetch latest session result, returns false if failed or not yet available (session ongoing or not enough time passed since the end)
 bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]) {
   got_new_results = false;
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected!");
-    return false;
-  }
+  if (WiFi.status() != WL_CONNECTED) return false;
 
   WiFiClientSecure secureClient;
   secureClient.setInsecure();          // same approach as fetchLatestNews
@@ -121,7 +242,6 @@ bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]) {
 
   int httpCode = http.GET();
   if (httpCode != 200) {
-    Serial.printf("HTTP request failed for Last Session Results, code: %d\n", httpCode);
     http.end();
     return false;
   }
@@ -134,14 +254,7 @@ bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]) {
   JsonDocument doc;
 
   DeserializationError error = deserializeJson(doc, payload);
-  if (error) {
-    Serial.print("JSON parsing failed for Last Session Results: ");
-    Serial.println(error.c_str());
-    return false;
-  }
-
-  Serial.print("Payload: ");
-  Serial.println(payload);
+  if (error) return false;
 
   if (payload == "[]") return false;
 
@@ -206,7 +319,7 @@ bool fetch_f1_driver_standings() {
   if (statusCode != 200) { client.end(); return false; }
   error = deserializeJson(doc, client.getStream());
   client.end();
-  if (error) { Serial.printf("JSON error: %s\n", error.c_str()); return false; }
+  if (error) return false;
 
   JsonArray driverStandingsLists = doc["MRData"]["StandingsTable"]["StandingsLists"].as<JsonArray>();
 
@@ -252,7 +365,7 @@ bool fetch_f1_driver_standings() {
     if (statusCode != 200) { client.end(); return false; }
     error = deserializeJson(doc, client.getStream());
     client.end();
-    if (error) { Serial.printf("JSON error: %s\n", error.c_str()); return false; }
+    if (error) return false;
 
     JsonArray constructors = doc["MRData"]["ConstructorTable"]["Constructors"].as<JsonArray>();
     current_season.team_count = min((int)constructors.size(), 12);
@@ -296,7 +409,7 @@ bool fetch_f1_driver_standings() {
     if (statusCode != 200) { client.end(); return false; }
     error = deserializeJson(doc, client.getStream());
     client.end();
-    if (error) { Serial.printf("JSON error: %s\n", error.c_str()); return false; }
+    if (error) return false;
 
     current_season.season = doc["MRData"]["DriverTable"]["season"].as<String>();
     current_season.round  = "0";
@@ -336,7 +449,7 @@ bool fetch_f1_driver_standings() {
     if (statusCode != 200) { client.end(); return false; }
     error = deserializeJson(doc, client.getStream());
     client.end();
-    if (error) { Serial.printf("JSON error: %s\n", error.c_str()); return false; }
+    if (error) return false;
 
     JsonArray constructorStandingsLists = doc["MRData"]["StandingsTable"]["StandingsLists"].as<JsonArray>();
 
@@ -362,7 +475,7 @@ bool fetch_f1_driver_standings() {
       if (statusCode != 200) { client.end(); return false; }
       error = deserializeJson(doc, client.getStream());
       client.end();
-      if (error) { Serial.printf("JSON error: %s\n", error.c_str()); return false; }
+      if (error) return false;
       JsonArray constructors = doc["MRData"]["ConstructorTable"]["Constructors"].as<JsonArray>();
       current_season.team_count = constructors.size();
       for (size_t i = 0; i < current_season.team_count && i < 12; i++) {
@@ -393,14 +506,12 @@ bool getNextRaceInfo(NextRaceInfo &info) {
 
     if (httpCode == HTTP_CODE_MOVED_PERMANENTLY || httpCode == HTTP_CODE_FOUND) {
       String newUrl = http.getLocation(); // this gives the "Location" header from the redirect
-      Serial.println("Redirect to: " + newUrl);
       http.end(); // close the previous connection
       http.begin(secureClient, newUrl);
       httpCode = http.GET();
     }
 
     if (httpCode != 200) {
-        Serial.println("HTTP Error: " + String(httpCode));
         http.end();
         return false;
     }
@@ -411,10 +522,7 @@ bool getNextRaceInfo(NextRaceInfo &info) {
     JsonDocument doc;
 
     DeserializationError error = deserializeJson(doc, payload);
-    if (error) {
-        Serial.println("JSON parse failed");
-        return false;
-    }
+    if (error) return false;
 
     JsonObject race = doc["MRData"]["RaceTable"]["Races"][0];
     info.raceName    = race["raceName"].as<String>();
@@ -457,29 +565,17 @@ bool getNextRaceInfo(NextRaceInfo &info) {
 // Runs with a lvgl timer, fetches driver standings and next race infos (baseline F1 APIs)
 void update_f1_api(lv_timer_t *timer) {
   if (!fetch_f1_driver_standings()) {
+    next_race.sessionCount = 0;
     return;
   }
 
-  if (getNextRaceInfo(next_race)) {    
-      Serial.println("Race: " + next_race.raceName);
-      Serial.println("Circuit: " + next_race.circuitName);
-      Serial.println("Country: " + next_race.country);
-      Serial.println(next_race.isSprintWeekend ? "Sprint Weekend" : "Normal Weekend");
-
-      for (int i = 0; i < next_race.sessionCount; i++) {
-        String has_started = "No";
-        if (hasSessionStarted(next_race.sessions[i].date, next_race.sessions[i].time)) has_started = "Yes";
-          Serial.printf("%s - %s %s - Has already started: %s\n",
-                        next_race.sessions[i].name.c_str(),
-                        next_race.sessions[i].date.c_str(),
-                        next_race.sessions[i].time.c_str(),
-                        has_started.c_str());
-      }
-
+  if (getNextRaceInfo(next_race)) {
       // ── Weather forecast for each session (Open-Meteo, no API key) ─────────
       // fetchWeatherForRace() is self-throttled (WEATHER_REFRESH_MS = 1 h) so
       // calling it here every time update_f1_api fires (hourly) is safe.
       fetchWeatherForRace(next_race);
+  } else {
+      next_race.sessionCount = 0;
   }
 
   //update_driver_standings_ui();
@@ -494,15 +590,12 @@ void sendStatisticData(lv_timer_t *timer) {
   secureClient.setInsecure();
   HTTPClient http;
   String url = "https://www.we-race.it/wp-json/f1-halo/v2/sendstats?uuid=" + UUID + "&language=" + current_language + "&offset=" + offset + "&version=" + fw_version + "&flush=" + random(0, millis());
-  Serial.println("[Stats] URL: " + url);
   http.useHTTP10(true);
   http.setTimeout(12000);
   http.begin(secureClient, url.c_str());
 
   int httpCode = http.GET();
-  Serial.printf("[Stats] HTTP: %d\n", httpCode);
   if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("HTTP error: %d\n", httpCode);
     http.end();
     return;
   }
@@ -529,7 +622,6 @@ void sendStatisticData(lv_timer_t *timer) {
       newItem.qrLink = notification["qr"].as<String>();
       notificationQueue.push_back(newItem);
     }
-    Serial.printf("Synced: %d notifications available.\n", notificationQueue.size());
   }
 
   http.end();
@@ -543,7 +635,6 @@ bool shouldSaveConfig = false;
 
 // WiFiManager callback notifying us of the need to save config
 void saveConfigCallback () {
-  Serial.println("Should save config");
   shouldSaveConfig = true;
 }
 

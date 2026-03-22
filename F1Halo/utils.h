@@ -69,7 +69,6 @@ int64_t getUtcOffsetInSeconds() {
 #if HALO_FORCE_CHICAGO_TZ
   // America/Chicago with automatic DST transitions.
   static const char *HALO_CHICAGO_TZ = "CST6CDT,M3.2.0/2,M11.1.0/2";
-  static int64_t lastLoggedOffset = INT64_MIN;
 
   char previousTZ[96];
   bool hadTZ = copyCurrentTZ(previousTZ, sizeof(previousTZ));
@@ -86,7 +85,6 @@ int64_t getUtcOffsetInSeconds() {
 
   struct tm chicagoLocal = {};
   localtime_r(&nowUTC, &chicagoLocal);
-  int chicagoIsDst = chicagoLocal.tm_isdst;
 
   // Treat local wall clock as UTC to infer offset seconds from UTC epoch.
   time_t chicagoAsUTC = timegm(&chicagoLocal);
@@ -94,14 +92,6 @@ int64_t getUtcOffsetInSeconds() {
 
   restoreTZ(previousTZ, hadTZ);
   setUtcOffsetComponents(offsetSeconds);
-
-  if (offsetSeconds != lastLoggedOffset) {
-    Serial.printf("[TZ] America/Chicago offset: %+03d:%02d (DST=%d)\n",
-                  UTCoffsetHours,
-                  abs((int)UTCoffsetMinutes),
-                  chicagoIsDst > 0 ? 1 : 0);
-    lastLoggedOffset = offsetSeconds;
-  }
 
   return offsetSeconds;
 #else
@@ -172,9 +162,6 @@ bool hasSessionStarted(String utcSessionDate, String utcSessionTime) {
     time_t sessionEpoch = timegm(&tmUTC); // UTC epoch
     time_t nowUTC = time(nullptr); // Already UTC because gmtOffset_sec = 0
 
-    Serial.print("Epoch now: "); Serial.println(nowUTC);
-    Serial.print("Epoch session: "); Serial.println(sessionEpoch);
-
     return sessionEpoch <= nowUTC ? true : false;
 }
 
@@ -190,9 +177,6 @@ bool hasFreePracticeFinished(String utcSessionDate, String utcSessionTime) {
     
     time_t sessionEpoch = timegm(&tmUTC); // UTC epoch
     time_t nowUTC = time(nullptr); // Already UTC because gmtOffset_sec = 0
-
-    Serial.print("Epoch now: "); Serial.println(nowUTC);
-    Serial.print("Epoch session: "); Serial.println(sessionEpoch);
 
     return (nowUTC - sessionEpoch) >= 3900;
 }
@@ -340,9 +324,7 @@ char* getSessionDateTimeFormatted(String utcSessionDate, String utcSessionTime, 
 void update_internal_clock() {
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo, 3000)) {
-    Serial.println("[TZ] NTP sync pending, using current/fallback offset");
-  }
+  getLocalTime(&timeinfo, 3000);
   UTCoffset = (long)getUtcOffsetInSeconds();
 }
 
@@ -370,7 +352,6 @@ void update_ui(lv_timer_t *timer) {
   gmtime_r(&timeEpoch, &adjustedTime);
 
   //if (timeinfo.tm_min % 60 == 0) update_internal_clock();
-  Serial.println("Updating Clock and shit");
   if (racetab_labels.clock) lv_label_set_text_fmt(racetab_labels.clock, "%02d:%02d", adjustedTime.tm_hour, adjustedTime.tm_min);
   if (racetab_labels.date) {
     char dateFormatted[40];
@@ -379,9 +360,7 @@ void update_ui(lv_timer_t *timer) {
   }
   if (racetab_labels.race_name) lv_label_set_text_fmt(racetab_labels.race_name, "%s", next_race.raceName.c_str());
 
-  Serial.println("Updating Race Sessions");
   create_or_reload_race_sessions();
-  Serial.println("Race Sessions Updated");
 
   // NIGHT MODE
   if (nightModeActive) {
@@ -417,7 +396,6 @@ void force_update_ui() {
   gmtime_r(&timeEpoch, &adjustedTime);
 
   //if (timeinfo.tm_min % 60 == 0) update_internal_clock();
-  Serial.println("Updating Clock and shit");
   if (racetab_labels.clock) lv_label_set_text_fmt(racetab_labels.clock, "%02d:%02d", adjustedTime.tm_hour, adjustedTime.tm_min);
   if (racetab_labels.date) {
     char dateFormatted[40];
@@ -426,9 +404,7 @@ void force_update_ui() {
   }
   if (racetab_labels.race_name) lv_label_set_text_fmt(racetab_labels.race_name, "%s", next_race.raceName.c_str());
 
-  Serial.println("Updating Race Sessions");
   create_or_reload_race_sessions( true );
-  Serial.println("Race Sessions Updated");
 
   // NIGHT MODE
   if (nightModeActive) {

@@ -22,6 +22,7 @@ const String fw_version = "1.2.0";
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
+#include <esp_bt.h>
 WiFiManager wm;
 
 // LVGL
@@ -211,13 +212,10 @@ TabsStruct tabs;
 void setup() {
   Serial.begin(115200);
   //debug = &Serial;
-  Serial.printf("[HW] Board profile: %s\n", HALO_BOARD_PROFILE);
-  Serial.printf("[HW] Flash detected: %u MB\n", ESP.getFlashChipSize() / (1024 * 1024));
-  if (psramFound()) {
-    Serial.printf("[HW] PSRAM detected: %u MB\n", ESP.getPsramSize() / (1024 * 1024));
-  } else {
-    Serial.println("[HW] PSRAM not detected");
-  }
+
+  // Bluetooth is unused in Halo-F1; release BT stack memory to improve TLS headroom.
+  esp_err_t btRelease = esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
+  (void)btRelease;
 
   localized_text = &language_strings_en;
 
@@ -249,12 +247,9 @@ void setup() {
   lv_screen_load(screen.home);
 
   String uuid = getDeviceUUID();
-  Serial.println("Device UUID: " + uuid);
-  Serial.println("Device FW: " + fw_version);
+  (void)uuid;
 
   sendStatisticData(nullptr);
-
-  Serial.println("Setup done");
 }
 
 void loop() {   

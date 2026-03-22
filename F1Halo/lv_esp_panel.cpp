@@ -51,7 +51,9 @@ static bool init_board(halo_panel_ctx_t *ctx)
     if ((lcd_bus != nullptr) && (lcd_bus->getBasicAttributes().type == ESP_PANEL_BUS_TYPE_RGB)) {
         ctx->lcd->configFrameBufferNumber(HALO_RGB_FRAME_BUFFERS);
 #if CONFIG_IDF_TARGET_ESP32S3
-        static_cast<BusRGB *>(lcd_bus)->configRGB_BounceBufferSize(ctx->lcd->getFrameWidth() * HALO_RGB_BOUNCE_LINES);
+        auto *rgb_bus = static_cast<BusRGB *>(lcd_bus);
+        rgb_bus->configRGB_BounceBufferSize(ctx->lcd->getFrameWidth() * HALO_RGB_BOUNCE_LINES);
+        rgb_bus->configRGB_FreqHz(HALO_RGB_PCLK_HZ);
 #endif
     }
 
@@ -78,8 +80,6 @@ static bool init_board(halo_panel_ctx_t *ctx)
         ctx->backlight->setBrightness(100);
     }
 
-    Serial.printf("[Panel] LCD: %ldx%ld\n", (long)ctx->physical_width, (long)ctx->physical_height);
-    Serial.printf("[Panel] Touch: %s\n", (ctx->touch != nullptr) ? "enabled" : "disabled");
     return true;
 }
 
