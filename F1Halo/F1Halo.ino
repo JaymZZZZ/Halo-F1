@@ -30,6 +30,7 @@ WiFiManager wm;
 #include "lv_conf.h"
 LV_FONT_DECLARE(f1_symbols_28);
 LV_FONT_DECLARE(weather_icons_12);
+LV_FONT_DECLARE(weather_icons_14);
 LV_FONT_DECLARE(montserrat_12);
 LV_FONT_DECLARE(montserrat_14);
 LV_FONT_DECLARE(montserrat_18);
@@ -50,7 +51,7 @@ LV_FONT_DECLARE(lv_font_montserrat_40);
 #define F1_SYMBOL_WRENCH "\xEF\x82\xAD"
 #define F1_SYMBOL_HAMMER "\xEF\x9B\xA3"
 
-// Weather icon symbols (Font Awesome 7 Free Solid, font: weather_icons_16)
+// Weather icon symbols (Font Awesome Free Solid, font: weather_icons_14)
 #define WX_SYMBOL_SUN           "\xEF\x86\x85"  // U+F185 fa-sun
 #define WX_SYMBOL_CLOUD_SUN     "\xEF\x9B\x84"  // U+F6C4 fa-cloud-sun
 #define WX_SYMBOL_CLOUD         "\xEF\x83\x82"  // U+F0C2 fa-cloud

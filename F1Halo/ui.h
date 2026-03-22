@@ -920,8 +920,8 @@ void create_or_reload_race_sessions(bool force_reload) {
   lv_coord_t row_w = (lv_coord_t)(SCREEN_WIDTH - 4);
 
   // Weather-badge column is only shown when data is available.
-  // 48 px is comfortable for "SUN 22°" in montserrat_12.
-  const lv_coord_t WEATHER_W = 72;
+  // Slightly wider for the larger weather icon+temperature font.
+  const lv_coord_t WEATHER_W = 84;
 
   for (int i = 0; i < next_race.sessionCount; i++) {
     session = next_race.sessions[i];
@@ -986,8 +986,7 @@ void create_or_reload_race_sessions(bool force_reload) {
         lv_obj_t* w_lbl = lv_label_create(session_row);
 
         // Icon glyph + temperature: e.g. "☀ 22°"
-        // The icon is rendered in weather_icons_16; the degree+number are
-        // rendered as plain text with the same font (digits are in every font).
+        // The icon and temperature use the same mixed weather font.
         char w_buf[16];
         snprintf(w_buf, sizeof(w_buf), "%s %d\xC2\xB0",
                  getWeatherIcon(session_weather[i].wmo_code),
@@ -998,7 +997,7 @@ void create_or_reload_race_sessions(bool force_reload) {
         lv_obj_set_height(w_lbl, LV_SIZE_CONTENT);
         lv_label_set_long_mode(w_lbl, LV_LABEL_LONG_MODE_CLIP);
 
-        lv_obj_set_style_text_font(w_lbl,  &weather_icons_12, LV_PART_MAIN);
+        lv_obj_set_style_text_font(w_lbl,  &weather_icons_14, LV_PART_MAIN);
         lv_obj_set_style_text_align(w_lbl, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
         lv_obj_set_style_pad_right(w_lbl,  4, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(w_lbl,     LV_OPA_TRANSP, LV_PART_MAIN);
