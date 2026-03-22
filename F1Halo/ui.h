@@ -333,7 +333,7 @@ static uint32_t get_nationality_badge_color(const String &nationality) {
 }
 
 static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const String &nationality) {
-    lv_obj_t *badge = lv_label_create(parent);
+    lv_obj_t *badge = lv_obj_create(parent);
     if (badge == NULL) return NULL;
 
     const uint32_t bg = get_nationality_badge_color(nationality);
@@ -342,19 +342,26 @@ static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const String &na
     const uint8_t b = bg & 0xFF;
     const uint16_t luma = (uint16_t)((r * 299 + g * 587 + b * 114) / 1000);
 
-    lv_label_set_text(badge, get_country_code(nationality));
+    lv_obj_remove_style_all(badge);
     lv_obj_set_size(badge, 38, 24);
-    lv_obj_set_style_text_font(badge, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(badge,
-                                luma > 150 ? lv_color_black() : lv_color_white(),
-                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(badge, lv_color_hex(bg), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(badge, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(badge, lv_color_hex(0x666666), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_radius(badge, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(badge, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_clear_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *badge_text = lv_label_create(badge);
+    if (badge_text != NULL) {
+        lv_label_set_text(badge_text, get_country_code(nationality));
+        lv_obj_set_style_text_font(badge_text, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(badge_text,
+                                    luma > 150 ? lv_color_black() : lv_color_white(),
+                                    LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_center(badge_text);
+    }
+
     return badge;
 }
 
