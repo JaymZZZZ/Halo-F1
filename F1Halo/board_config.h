@@ -1,0 +1,28 @@
+#pragma once
+
+// JC8048W550 single-board configuration (ESP32_Display_Panel stack)
+#define HALO_BOARD_PROFILE "JC8048W550"
+
+// Physical LCD geometry (RGB panel native timing)
+#define HALO_LCD_PHYSICAL_WIDTH 800
+#define HALO_LCD_PHYSICAL_HEIGHT 480
+
+// Render UI in portrait, then rotate during flush.
+// 1 = rotate clockwise 90 deg, 0 = rotate counter-clockwise 90 deg.
+#define HALO_UI_ROTATION_CW_90 1
+
+// LVGL draw buffer divisor: 4 = 1/4 screen, 8 = 1/8 screen.
+// Larger buffers reduce partial-flush churn and improve scroll smoothness.
+#define HALO_LCD_DRAW_BUF_DIV 8
+
+// RGB anti-tear tuning for ESP32_Display_Panel driver stack.
+#define HALO_RGB_FRAME_BUFFERS 2
+#define HALO_RGB_BOUNCE_LINES 10
+
+// Logical UI geometry (portrait)
+#define SCREEN_WIDTH 480
+#define SCREEN_HEIGHT 800
+
+// Personal default timezone behavior.
+#define HALO_FORCE_CHICAGO_TZ 1
+#define HALO_DEFAULT_UTC_OFFSET_SECONDS (-6 * 3600)
