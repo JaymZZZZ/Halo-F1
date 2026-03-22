@@ -11,6 +11,14 @@
 #error "This project currently requires LV_COLOR_DEPTH == 16."
 #endif
 
+#ifndef HALO_PANEL_DIAG_LOG
+#define HALO_PANEL_DIAG_LOG 0
+#endif
+
+#ifndef HALO_PANEL_DIAG_INTERVAL_MS
+#define HALO_PANEL_DIAG_INTERVAL_MS (15000UL)
+#endif
+
 using namespace esp_panel::board;
 using namespace esp_panel::drivers;
 
@@ -31,6 +39,18 @@ typedef struct {
     volatile bool refresh_done;
     bool use_fb_swap;
     bool frame_copy_started;
+    uint32_t diag_last_ms;
+    uint32_t diag_flush_calls;
+    uint32_t diag_frame_starts;
+    uint32_t diag_frame_switches;
+    uint32_t diag_switch_timeouts;
+    uint32_t diag_oob_writes;
+    uint32_t diag_max_clip_w;
+    uint32_t diag_max_clip_h;
+    uint32_t diag_max_wait_ms;
+    uint32_t diag_boot_free_heap;
+    uint32_t diag_boot_free_psram;
+    uint32_t diag_boot_free_internal;
     int32_t physical_width;
     int32_t physical_height;
     bool portrait_mode;
@@ -41,6 +61,7 @@ static halo_panel_ctx_t *s_ctx = nullptr;
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 static bool init_board(halo_panel_ctx_t *ctx);
 static bool IRAM_ATTR refresh_finish_cb(void *user_data);
+static void maybe_log_diag(halo_panel_ctx_t *ctx);
 
 static inline int32_t clamp_i32(int32_t value, int32_t min_v, int32_t max_v)
 {
@@ -99,6 +120,18 @@ static bool init_board(halo_panel_ctx_t *ctx)
     ctx->refresh_done = true;
     ctx->use_fb_swap = false;
     ctx->frame_copy_started = false;
+    ctx->diag_last_ms = millis();
+    ctx->diag_flush_calls = 0;
+    ctx->diag_frame_starts = 0;
+    ctx->diag_frame_switches = 0;
+    ctx->diag_switch_timeouts = 0;
+    ctx->diag_oob_writes = 0;
+    ctx->diag_max_clip_w = 0;
+    ctx->diag_max_clip_h = 0;
+    ctx->diag_max_wait_ms = 0;
+    ctx->diag_boot_free_heap = ESP.getFreeHeap();
+    ctx->diag_boot_free_psram = ESP.getFreePsram();
+    ctx->diag_boot_free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     if (ctx->physical_width > 0 && ctx->physical_height > 0) {
         ctx->frame_buf_pixels = (uint32_t)ctx->physical_width * (uint32_t)ctx->physical_height;
@@ -122,6 +155,55 @@ static bool IRAM_ATTR refresh_finish_cb(void *user_data)
     halo_panel_ctx_t *ctx = (halo_panel_ctx_t *)user_data;
     if (ctx != nullptr) ctx->refresh_done = true;
     return false;
+}
+
+static void maybe_log_diag(halo_panel_ctx_t *ctx)
+{
+#if HALO_PANEL_DIAG_LOG
+    if (ctx == nullptr) return;
+
+    const uint32_t now = millis();
+    if ((uint32_t)(now - ctx->diag_last_ms) < HALO_PANEL_DIAG_INTERVAL_MS) return;
+    ctx->diag_last_ms = now;
+
+    lv_mem_monitor_t mon;
+    lv_mem_monitor(&mon);
+
+    const uint32_t free_heap = ESP.getFreeHeap();
+    const uint32_t min_heap = ESP.getMinFreeHeap();
+    const uint32_t free_psram = ESP.getFreePsram();
+    const uint32_t min_psram = ESP.getMinFreePsram();
+    const uint32_t free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    const uint32_t min_internal = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+
+    Serial.printf(
+        "[Diag] t=%lu flush=%lu starts=%lu swaps=%lu to=%lu oob=%lu clip_max=%lux%lu wait_max=%lums "
+        "heap=%u(min=%u,delta=%ld) int=%u(min=%u,delta=%ld) psram=%u(min=%u,delta=%ld) "
+        "lv_used=%u%% lv_frag=%u%%\n",
+        (unsigned long)now,
+        (unsigned long)ctx->diag_flush_calls,
+        (unsigned long)ctx->diag_frame_starts,
+        (unsigned long)ctx->diag_frame_switches,
+        (unsigned long)ctx->diag_switch_timeouts,
+        (unsigned long)ctx->diag_oob_writes,
+        (unsigned long)ctx->diag_max_clip_w,
+        (unsigned long)ctx->diag_max_clip_h,
+        (unsigned long)ctx->diag_max_wait_ms,
+        free_heap,
+        min_heap,
+        (long)free_heap - (long)ctx->diag_boot_free_heap,
+        free_internal,
+        min_internal,
+        (long)free_internal - (long)ctx->diag_boot_free_internal,
+        free_psram,
+        min_psram,
+        (long)free_psram - (long)ctx->diag_boot_free_psram,
+        (unsigned int)mon.used_pct,
+        (unsigned int)mon.frag_pct
+    );
+#else
+    LV_UNUSED(ctx);
+#endif
 }
 
 lv_display_t *halo_panel_display_create(void)
@@ -213,6 +295,10 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         return;
     }
 
+    ctx->diag_flush_calls++;
+    if ((uint32_t)clip_w > ctx->diag_max_clip_w) ctx->diag_max_clip_w = (uint32_t)clip_w;
+    if ((uint32_t)clip_h > ctx->diag_max_clip_h) ctx->diag_max_clip_h = (uint32_t)clip_h;
+
     uint16_t *src = (uint16_t *)px_map;
     src += (clip_y1 - src_y1) * src_full_w;
     src += (clip_x1 - src_x1);
@@ -224,6 +310,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
                 memcpy(ctx->frame_buf[ctx->pending_fb_idx], ctx->frame_buf[ctx->active_fb_idx], ctx->frame_buf_bytes);
             }
             ctx->frame_copy_started = true;
+            ctx->diag_frame_starts++;
         }
 
         uint16_t *dst_fb = ctx->frame_buf[ctx->pending_fb_idx];
@@ -244,6 +331,8 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 
                 if ((phys_x >= 0) && (phys_x < phys_w) && (phys_y >= 0) && (phys_y < phys_h)) {
                     dst_fb[phys_y * phys_w + phys_x] = px;
+                } else {
+                    ctx->diag_oob_writes++;
                 }
             }
         }
@@ -256,9 +345,13 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
             while (!ctx->refresh_done && ((millis() - t0) < 50U)) {
                 delay(1);
             }
+            const uint32_t waited = (uint32_t)(millis() - t0);
+            if (waited > ctx->diag_max_wait_ms) ctx->diag_max_wait_ms = waited;
+            if (!ctx->refresh_done) ctx->diag_switch_timeouts++;
 
             ctx->active_fb_idx = ctx->pending_fb_idx;
             ctx->frame_copy_started = false;
+            ctx->diag_frame_switches++;
         }
     } else if (ctx->portrait_mode) {
         const uint32_t needed = (uint32_t)(clip_w * clip_h);
@@ -293,6 +386,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         (void)ctx->lcd->drawBitmap(clip_x1, clip_y1, clip_w, clip_h, (const uint8_t *)src, 0);
     }
 
+    maybe_log_diag(ctx);
     lv_display_flush_ready(disp);
 }
 

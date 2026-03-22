@@ -27,3 +27,7 @@
 // Personal default timezone behavior.
 #define HALO_FORCE_CHICAGO_TZ 1
 #define HALO_DEFAULT_UTC_OFFSET_SECONDS (-6 * 3600)
+
+// Runtime diagnostics for long-run drift/tearing analysis.
+#define HALO_PANEL_DIAG_LOG 1
+#define HALO_PANEL_DIAG_INTERVAL_MS (15000UL)
