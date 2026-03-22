@@ -5,6 +5,7 @@ bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]);
 bool fetch_f1_driver_standings();
 static void populate_standings(lv_obj_t * container, int offset);
 static void populate_results(lv_obj_t * container, int offset);
+static int get_standings_page_size(lv_obj_t *container);
 bool getLatestNews(String &title, String &link, String &desc);
 void create_or_reload_news_ui(lv_timer_t *timer);
 static void layout_race_tab_sections();
@@ -551,16 +552,34 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
 }
 
 void animate_standings(lv_obj_t * container) {
+    int page_size = get_standings_page_size(container);
     lv_obj_clean(container);
-    standings_offset += STANDINGS_PAGE_SIZE;
+    standings_offset += page_size;
     if (standings_offset >= TOTAL_DRIVERS) standings_offset = 0;
     populate_standings(container, standings_offset);
+}
+
+static int get_standings_page_size(lv_obj_t *container) {
+    if (container == NULL) return STANDINGS_PAGE_SIZE;
+    lv_coord_t container_h = lv_obj_get_height(container);
+    if (container_h <= 0) {
+        lv_obj_update_layout(container);
+        container_h = lv_obj_get_height(container);
+    }
+
+    // row height (46) + container gap/padding budget
+    const int row_budget_h = 48;
+    int rows = (int)container_h / row_budget_h;
+    if (rows < STANDINGS_PAGE_SIZE) rows = STANDINGS_PAGE_SIZE;
+    if (rows > TOTAL_DRIVERS) rows = TOTAL_DRIVERS;
+    return rows;
 }
 
 static void populate_standings(lv_obj_t * container, int offset) {
     //Serial.println("Populating standings");
 
-    for (int i = 0; i < STANDINGS_PAGE_SIZE; i++) {
+    int page_size = get_standings_page_size(container);
+    for (int i = 0; i < page_size; i++) {
         int idx = offset + i;
         if (idx >= TOTAL_DRIVERS) break;
 
@@ -580,15 +599,17 @@ static void populate_standings(lv_obj_t * container, int offset) {
 }
 
 void animate_results(lv_obj_t * container) {
+    int page_size = get_standings_page_size(container);
     lv_obj_clean(container);
-    standings_offset += STANDINGS_PAGE_SIZE;
+    standings_offset += page_size;
     if (standings_offset >= TOTAL_DRIVERS) standings_offset = 0;
     populate_results(container, standings_offset);
 }
 
 static void populate_results(lv_obj_t * container, int offset) {
+    int page_size = get_standings_page_size(container);
     if (current_results != "Qualifying" && current_results != "Sprint Qualifying") {
-      for (int i = 0; i < STANDINGS_PAGE_SIZE; i++) {
+      for (int i = 0; i < page_size; i++) {
         int idx = offset + i;
         if (idx >= TOTAL_DRIVERS) break;
 
@@ -639,7 +660,7 @@ static void populate_results(lv_obj_t * container, int offset) {
         */
       }
     } else {
-        for (int i = 0; i < STANDINGS_PAGE_SIZE; i++) {
+        for (int i = 0; i < page_size; i++) {
         int idx = offset + i;
         if (idx >= TOTAL_DRIVERS) break;
 
@@ -710,7 +731,7 @@ void set_custom_theme(void) {
 lv_obj_t* create_chequered_stripe(lv_obj_t* parent) {
     lv_coord_t screen_w = lv_obj_get_content_width(parent);
     if (screen_w <= 0) screen_w = lv_disp_get_hor_res(NULL);
-    lv_coord_t stripe_h = 8;
+    lv_coord_t stripe_h = 12;
     lv_coord_t square_height = stripe_h / 2;  // two rows of squares
     lv_coord_t square_width = 17;  // two rows of squares
 
