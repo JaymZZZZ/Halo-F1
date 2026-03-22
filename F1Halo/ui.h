@@ -343,7 +343,7 @@ static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const String &na
     const uint16_t luma = (uint16_t)((r * 299 + g * 587 + b * 114) / 1000);
 
     lv_label_set_text(badge, get_country_code(nationality));
-    lv_obj_set_size(badge, 22, 14);
+    lv_obj_set_size(badge, 38, 24);
     lv_obj_set_style_text_font(badge, &montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_align(badge, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(badge,
@@ -399,7 +399,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     }
 
     const lv_coord_t COL_NUMBER_W = 88;
-    const lv_coord_t COL_FLAG_W = 24;
+    const lv_coord_t COL_FLAG_W = 38;
     const lv_coord_t COL_POINTS_W = 124;
 
     // --- Row container ---
@@ -410,7 +410,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     lv_obj_set_layout(row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(row, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(row, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
     // --- Driver number container ---
@@ -462,7 +462,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     lv_obj_t *flag_container = lv_obj_create(row);
     if (flag_container != NULL) {
         lv_obj_remove_style_all(flag_container);
-        lv_obj_set_size(flag_container, COL_FLAG_W, 18);
+        lv_obj_set_size(flag_container, COL_FLAG_W, 24);
         lv_obj_clear_flag(flag_container, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_t *flag_icon = create_nationality_flag_icon(flag_container, nationality);
         if (flag_icon != NULL) lv_obj_center(flag_icon);
