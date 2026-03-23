@@ -19,6 +19,10 @@
 #define HALO_PANEL_DIAG_INTERVAL_MS (15000UL)
 #endif
 
+#ifndef HALO_RGB_USE_FB_SWAP
+#define HALO_RGB_USE_FB_SWAP 0
+#endif
+
 using namespace esp_panel::board;
 using namespace esp_panel::drivers;
 
@@ -142,7 +146,7 @@ static bool init_board(halo_panel_ctx_t *ctx)
         if (fb == nullptr) break;
         ctx->frame_buf[ctx->frame_buf_count++] = (uint16_t *)fb;
     }
-    if ((ctx->frame_buf_count >= 2) && (ctx->lcd->getFrameColorBits() == 16)) {
+    if (HALO_RGB_USE_FB_SWAP && (ctx->frame_buf_count >= 2) && (ctx->lcd->getFrameColorBits() == 16)) {
         ctx->use_fb_swap = true;
         ctx->lcd->attachRefreshFinishCallback(refresh_finish_cb, ctx);
     }

@@ -19,6 +19,9 @@
 #define HALO_RGB_FRAME_BUFFERS 2
 #define HALO_RGB_BOUNCE_LINES 20
 #define HALO_RGB_PCLK_HZ (14 * 1000 * 1000)
+// Framebuffer swap path currently leaks over time on this board/driver combo.
+// Keep this disabled for long-run stability.
+#define HALO_RGB_USE_FB_SWAP 0
 
 // Logical UI geometry (portrait)
 #define SCREEN_WIDTH 480
