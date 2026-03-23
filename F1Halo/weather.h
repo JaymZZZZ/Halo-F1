@@ -124,6 +124,10 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
     secureClient.setInsecure();   // same pattern as getLastSessionResults()
 
     HTTPClient http;
+    http.useHTTP10(true);
+    http.setReuse(false);
+    http.addHeader("Accept-Encoding", "identity");
+    http.addHeader("Connection", "close");
     http.begin(secureClient, url);
     http.setTimeout(12000);
 
@@ -133,10 +137,13 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
         return false;
     }
 
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, http.getStream());
+    String payload = http.getString();
     http.end();
 
+    if (payload.length() == 0) return false;
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
     if (err) return false;
 
     JsonArray times  = doc["hourly"]["time"].as<JsonArray>();
