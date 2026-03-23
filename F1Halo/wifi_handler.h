@@ -1,22 +1,62 @@
+#include <esp_heap_caps.h>
+
 // Memory maintenance (ESP32 has no GC; this reduces long-run heap fragmentation).
 #ifndef HALO_MEMORY_MAINTENANCE_PERIOD_MS
-#define HALO_MEMORY_MAINTENANCE_PERIOD_MS (15UL * 60UL * 1000UL)
+#define HALO_MEMORY_MAINTENANCE_PERIOD_MS (2UL * 60UL * 1000UL)
+#endif
+
+#ifndef HALO_MEMORY_GUARD_HEAP_THRESHOLD
+#define HALO_MEMORY_GUARD_HEAP_THRESHOLD (30000U)
+#endif
+
+#ifndef HALO_MEMORY_GUARD_INTERNAL_THRESHOLD
+#define HALO_MEMORY_GUARD_INTERNAL_THRESHOLD (14000U)
+#endif
+
+#ifndef HALO_MEMORY_GUARD_CONSECUTIVE_HITS
+#define HALO_MEMORY_GUARD_CONSECUTIVE_HITS (4U)
 #endif
 
 static void memory_maintenance_task(lv_timer_t *timer) {
   LV_UNUSED(timer);
+  static uint8_t low_mem_hits = 0;
 
   // Release excess capacity retained by notification queue allocations.
   std::vector<NotificationItem>(notificationQueue).swap(notificationQueue);
 
+  const uint32_t freeHeap = ESP.getFreeHeap();
+  const uint32_t minHeap = ESP.getMinFreeHeap();
+  const uint32_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  const uint32_t minInternal = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+  const uint32_t freePsram = ESP.getFreePsram();
+  const uint32_t minPsram = ESP.getMinFreePsram();
+
+  bool low_mem = (freeHeap < HALO_MEMORY_GUARD_HEAP_THRESHOLD) ||
+                 (freeInternal < HALO_MEMORY_GUARD_INTERNAL_THRESHOLD);
+  low_mem_hits = low_mem ? (uint8_t)(low_mem_hits + 1U) : 0U;
+
   Serial.printf(
-    "[Mem] heap=%u min_heap=%u psram=%u min_psram=%u notif=%u\n",
-    ESP.getFreeHeap(),
-    ESP.getMinFreeHeap(),
-    ESP.getFreePsram(),
-    ESP.getMinFreePsram(),
-    (unsigned int)notificationQueue.size()
+    "[Mem] heap=%u min_heap=%u int=%u min_int=%u psram=%u min_psram=%u notif=%u low=%u hits=%u\n",
+    freeHeap,
+    minHeap,
+    freeInternal,
+    minInternal,
+    freePsram,
+    minPsram,
+    (unsigned int)notificationQueue.size(),
+    low_mem ? 1U : 0U,
+    (unsigned int)low_mem_hits
   );
+
+  if (low_mem_hits >= HALO_MEMORY_GUARD_CONSECUTIVE_HITS) {
+    Serial.printf(
+      "[MemGuard] Persistent low memory (heap=%u int=%u). Restarting...\n",
+      freeHeap,
+      freeInternal
+    );
+    delay(100);
+    ESP.restart();
+  }
 }
 
 static inline void news_strip_markup(String &value) {
