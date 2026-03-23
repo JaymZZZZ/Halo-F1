@@ -156,7 +156,7 @@ unsigned long long last_checked_session_results = 0;
 unsigned int check_delay = 0;
 
 lv_display_t * disp;
-lv_timer_t * clock_timer, * f1_api_timer, * standings_ui_timer, *news_timer, *statistics_timer, *notifications_timer;
+lv_timer_t * clock_timer, * f1_api_timer, * standings_ui_timer, *news_timer, *statistics_timer, *notifications_timer, *memory_maintenance_timer;
 
 lv_obj_t * sessions_container, * standings_container;
 

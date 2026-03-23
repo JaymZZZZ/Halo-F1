@@ -1,3 +1,24 @@
+// Memory maintenance (ESP32 has no GC; this reduces long-run heap fragmentation).
+#ifndef HALO_MEMORY_MAINTENANCE_PERIOD_MS
+#define HALO_MEMORY_MAINTENANCE_PERIOD_MS (15UL * 60UL * 1000UL)
+#endif
+
+static void memory_maintenance_task(lv_timer_t *timer) {
+  LV_UNUSED(timer);
+
+  // Release excess capacity retained by notification queue allocations.
+  std::vector<NotificationItem>(notificationQueue).swap(notificationQueue);
+
+  Serial.printf(
+    "[Mem] heap=%u min_heap=%u psram=%u min_psram=%u notif=%u\n",
+    ESP.getFreeHeap(),
+    ESP.getMinFreeHeap(),
+    ESP.getFreePsram(),
+    ESP.getMinFreePsram(),
+    (unsigned int)notificationQueue.size()
+  );
+}
+
 static inline void news_strip_markup(String &value) {
   value.replace("<![CDATA[", "");
   value.replace("]]>", "");
@@ -246,19 +267,14 @@ bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]) {
     return false;
   }
 
-  String payload = http.getString();
-  http.end();
-
-  if (payload.substring(2,8) == "detail") return false;
-
   JsonDocument doc;
-
-  DeserializationError error = deserializeJson(doc, payload);
+  DeserializationError error = deserializeJson(doc, http.getStream());
+  http.end();
   if (error) return false;
-
-  if (payload == "[]") return false;
+  if (doc["detail"].is<JsonVariant>()) return false;
 
   JsonArray arr = doc.as<JsonArray>();
+  if (arr.isNull() || arr.size() == 0) return false;
   int i = 0;
 
   for (JsonObject obj : arr) {
@@ -518,12 +534,9 @@ bool getNextRaceInfo(NextRaceInfo &info) {
         return false;
     }
 
-    String payload = http.getString();
-    http.end();
-
     JsonDocument doc;
-
-    DeserializationError error = deserializeJson(doc, payload);
+    DeserializationError error = deserializeJson(doc, http.getStream());
+    http.end();
     if (error) return false;
 
     JsonObject race = doc["MRData"]["RaceTable"]["Races"][0];
@@ -602,10 +615,9 @@ void sendStatisticData(lv_timer_t *timer) {
     return;
   }
 
-  String payload = http.getString();
-
   JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, payload);
+  DeserializationError error = deserializeJson(doc, http.getStream());
+  http.end();
 
   if (!error) {
     // check for updates
@@ -615,6 +627,7 @@ void sendStatisticData(lv_timer_t *timer) {
 
     // populate notifications
     notificationQueue.clear();
+    notificationQueue.shrink_to_fit();
     JsonArray notifications = doc["notifications"];
     
     for (JsonObject notification : notifications) {
@@ -626,9 +639,6 @@ void sendStatisticData(lv_timer_t *timer) {
     }
   }
 
-  http.end();
-
-  //Serial.printf("Stats response: %s\n", payload.c_str()); // debug
   return;
 }
 
@@ -671,6 +681,8 @@ void setupWiFiManager(bool forceConfig) {
       statistics_timer = NULL;
       if (notifications_timer) lv_timer_del(notifications_timer);
       notifications_timer = NULL;
+      if (memory_maintenance_timer) lv_timer_del(memory_maintenance_timer);
+      memory_maintenance_timer = NULL;
       Serial.println("failed to connect and hit timeout");
       delay(3000);
       //reset and try again, or maybe put it to deep sleep
@@ -686,6 +698,7 @@ void setupWiFiManager(bool forceConfig) {
       if (!news_timer) news_timer = lv_timer_create(create_or_reload_news_ui, 5*60000, NULL);
       if (!statistics_timer) statistics_timer = lv_timer_create(sendStatisticData, 59*6000, NULL);
       if (!notifications_timer) notifications_timer = lv_timer_create(notification_scheduler_task, NOTIFICATION_INTERVAL_MS, NULL);
+      if (!memory_maintenance_timer) memory_maintenance_timer = lv_timer_create(memory_maintenance_task, HALO_MEMORY_MAINTENANCE_PERIOD_MS, NULL);
       lv_screen_load(screen.home);
     }
   } else {
@@ -700,6 +713,8 @@ void setupWiFiManager(bool forceConfig) {
       statistics_timer = NULL;
       if (notifications_timer) lv_timer_del(notifications_timer);
       notifications_timer = NULL;
+      if (memory_maintenance_timer) lv_timer_del(memory_maintenance_timer);
+      memory_maintenance_timer = NULL;
       Serial.println("failed to connect and hit timeout");
       delay(3000);
       // if we still have not connected restart and try all over again
@@ -715,6 +730,7 @@ void setupWiFiManager(bool forceConfig) {
       if (!news_timer) news_timer = lv_timer_create(create_or_reload_news_ui, 5*60000, NULL);
       if (!statistics_timer) statistics_timer = lv_timer_create(sendStatisticData, 59*60000, NULL);
       if (!notifications_timer) notifications_timer = lv_timer_create(notification_scheduler_task, NOTIFICATION_INTERVAL_MS, NULL);
+      if (!memory_maintenance_timer) memory_maintenance_timer = lv_timer_create(memory_maintenance_task, HALO_MEMORY_MAINTENANCE_PERIOD_MS, NULL);
       lv_screen_load(screen.home);
     }
   }

@@ -133,15 +133,9 @@ bool fetchWeatherForRace(NextRaceInfo& race) {
         return false;
     }
 
-    // ── Read full payload then parse ────────────────────────────────────────
-    // Open-Meteo's weekend response is ~5 KB — well within ESP32 heap.
-    // Parsing from a String is more reliable than streaming with a filter,
-    // which can silently discard content if the filter doc is under-sized.
-    String payload = http.getString();
-    http.end();
-
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload);
+    DeserializationError err = deserializeJson(doc, http.getStream());
+    http.end();
 
     if (err) return false;
 
