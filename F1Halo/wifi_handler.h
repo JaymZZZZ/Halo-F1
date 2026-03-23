@@ -2,7 +2,7 @@
 
 // Memory maintenance (ESP32 has no GC; this reduces long-run heap fragmentation).
 #ifndef HALO_MEMORY_MAINTENANCE_PERIOD_MS
-#define HALO_MEMORY_MAINTENANCE_PERIOD_MS (2UL * 60UL * 1000UL)
+#define HALO_MEMORY_MAINTENANCE_PERIOD_MS (15UL * 60UL * 1000UL)
 #endif
 
 #ifndef HALO_MEMORY_GUARD_HEAP_THRESHOLD
@@ -20,9 +20,6 @@
 static void memory_maintenance_task(lv_timer_t *timer) {
   LV_UNUSED(timer);
   static uint8_t low_mem_hits = 0;
-
-  // Release excess capacity retained by notification queue allocations.
-  std::vector<NotificationItem>(notificationQueue).swap(notificationQueue);
 
   const uint32_t freeHeap = ESP.getFreeHeap();
   const uint32_t minHeap = ESP.getMinFreeHeap();
@@ -667,7 +664,6 @@ void sendStatisticData(lv_timer_t *timer) {
 
     // populate notifications
     notificationQueue.clear();
-    notificationQueue.shrink_to_fit();
     JsonArray notifications = doc["notifications"];
     
     for (JsonObject notification : notifications) {
@@ -736,7 +732,7 @@ void setupWiFiManager(bool forceConfig) {
       if (!clock_timer) clock_timer = lv_timer_create(update_ui, 60000, NULL);
       if (!f1_api_timer) f1_api_timer = lv_timer_create(update_f1_api, 3600000, NULL);
       if (!news_timer) news_timer = lv_timer_create(create_or_reload_news_ui, 5*60000, NULL);
-      if (!statistics_timer) statistics_timer = lv_timer_create(sendStatisticData, 59*6000, NULL);
+      if (!statistics_timer) statistics_timer = lv_timer_create(sendStatisticData, 59*60000, NULL);
       if (!notifications_timer) notifications_timer = lv_timer_create(notification_scheduler_task, NOTIFICATION_INTERVAL_MS, NULL);
       if (!memory_maintenance_timer) memory_maintenance_timer = lv_timer_create(memory_maintenance_task, HALO_MEMORY_MAINTENANCE_PERIOD_MS, NULL);
       lv_screen_load(screen.home);
