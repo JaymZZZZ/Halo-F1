@@ -1,3 +1,5 @@
+#include <string.h>
+
 typedef struct {
   const char* months[12];
   const char* short_months[12];
@@ -508,19 +510,20 @@ const LanguageStrings language_strings_no PROGMEM = {
   "Skjerm",
 };
 
-uint32_t get_team_color(String team) {
+uint32_t get_team_color(const char *team) {
+  if (team == nullptr) return 0x333333;
   // maybe use a switch case
-  if (team == "mercedes") return 0x00D7B6;
-  if (team == "red_bull") return 0x0000FF;
-  if (team == "ferrari") return 0xFF1100;
-  if (team == "mclaren") return 0xF47600;
-  if (team == "alpine") return 0x00A1E8;
-  if (team == "rb") return 0x6C98FF;
-  if (team == "aston_martin") return 0x229971;
-  if (team == "williams") return 0x1868DB;
-  if (team == "sauber") return 0x01C00E;
-  if (team == "haas") return 0xFFFFFF; //0x9C9FA2;
-  if (team == "audi") return 0xFF3300;
+  if (strcmp(team, "mercedes") == 0) return 0x00D7B6;
+  if (strcmp(team, "red_bull") == 0) return 0x0000FF;
+  if (strcmp(team, "ferrari") == 0) return 0xFF1100;
+  if (strcmp(team, "mclaren") == 0) return 0xF47600;
+  if (strcmp(team, "alpine") == 0) return 0x00A1E8;
+  if (strcmp(team, "rb") == 0) return 0x6C98FF;
+  if (strcmp(team, "aston_martin") == 0) return 0x229971;
+  if (strcmp(team, "williams") == 0) return 0x1868DB;
+  if (strcmp(team, "sauber") == 0) return 0x01C00E;
+  if (strcmp(team, "haas") == 0) return 0xFFFFFF; //0x9C9FA2;
+  if (strcmp(team, "audi") == 0) return 0xFF3300;
 
   return 0x333333;
 }

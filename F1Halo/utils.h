@@ -149,15 +149,33 @@ time_t timegm(struct tm* tm) {
   return result;
 }
 
+static bool parse_utc_session_tm(const String &utcSessionDate,
+                                 const String &utcSessionTime,
+                                 struct tm *outTm) {
+  if (outTm == nullptr) return false;
+
+  char timeBuf[16];
+  const char *timeStr = utcSessionTime.c_str();
+  size_t timeLen = strnlen(timeStr, sizeof(timeBuf) - 1);
+  memcpy(timeBuf, timeStr, timeLen);
+  timeBuf[timeLen] = '\0';
+  if (timeLen > 0 && timeBuf[timeLen - 1] == 'Z') {
+    timeBuf[timeLen - 1] = '\0';
+  }
+
+  char utcSessionDateTime[32];
+  int n = snprintf(utcSessionDateTime, sizeof(utcSessionDateTime), "%sT%s",
+                   utcSessionDate.c_str(), timeBuf);
+  if (n <= 0 || (size_t)n >= sizeof(utcSessionDateTime)) return false;
+
+  memset(outTm, 0, sizeof(*outTm));
+  return strptime(utcSessionDateTime, "%Y-%m-%dT%H:%M:%S", outTm) != nullptr;
+}
+
 // Tells if a session has already started given the strings for date and time retrieved from API
-bool hasSessionStarted(String utcSessionDate, String utcSessionTime) {
+bool hasSessionStarted(const String &utcSessionDate, const String &utcSessionTime) {
     struct tm tmUTC = {};
-
-    int length = strlen(utcSessionTime.c_str());
-    utcSessionTime[length-1] = '\0';
-
-    String utcSessionDateTime = utcSessionDate + "T" + (String)utcSessionTime;
-    strptime(utcSessionDateTime.c_str(), "%Y-%m-%dT%H:%M:%S", &tmUTC);
+    if (!parse_utc_session_tm(utcSessionDate, utcSessionTime, &tmUTC)) return false;
     
     time_t sessionEpoch = timegm(&tmUTC); // UTC epoch
     time_t nowUTC = time(nullptr); // Already UTC because gmtOffset_sec = 0
@@ -166,14 +184,9 @@ bool hasSessionStarted(String utcSessionDate, String utcSessionTime) {
 }
 
 // Tells if FP finished, used for avoiding unnecessary API calls, it waits a few minutes longer than an hour
-bool hasFreePracticeFinished(String utcSessionDate, String utcSessionTime) {
+bool hasFreePracticeFinished(const String &utcSessionDate, const String &utcSessionTime) {
     struct tm tmUTC = {};
-
-    int length = strlen(utcSessionTime.c_str());
-    utcSessionTime[length-1] = '\0';
-
-    String utcSessionDateTime = utcSessionDate + "T" + (String)utcSessionTime;
-    strptime(utcSessionDateTime.c_str(), "%Y-%m-%dT%H:%M:%S", &tmUTC);
+    if (!parse_utc_session_tm(utcSessionDate, utcSessionTime, &tmUTC)) return false;
     
     time_t sessionEpoch = timegm(&tmUTC); // UTC epoch
     time_t nowUTC = time(nullptr); // Already UTC because gmtOffset_sec = 0
@@ -256,20 +269,16 @@ DriverStanding* getDriverInfoByNumber(const String& driverNumber) {
 
 // Formats session datetime 
 // @param -> iWant = "all", "date", "time"
-char* getSessionDateTimeFormatted(String utcSessionDate, String utcSessionTime, String iWant = "all") {
+char* getSessionDateTimeFormatted(const String &utcSessionDate,
+                                  const String &utcSessionTime,
+                                  const char *iWant = "all") {
     static char formatted[50]; // static so it persists after return
 
-    // Remove trailing 'Z' if present
-    if (utcSessionTime.endsWith("Z")) {
-        utcSessionTime.remove(utcSessionTime.length() - 1);
-    }
-
-    // Combine into full datetime string
-    String utcSessionDateTime = utcSessionDate + "T" + utcSessionTime;
-
-    // Parse into struct tm
     struct tm sessionTime = {};
-    strptime(utcSessionDateTime.c_str(), "%Y-%m-%dT%H:%M:%S", &sessionTime);
+    if (!parse_utc_session_tm(utcSessionDate, utcSessionTime, &sessionTime)) {
+        formatted[0] = '\0';
+        return formatted;
+    }
 
     // Convert to time_t in UTC
     time_t sessionEpoch = timegm(&sessionTime);
@@ -281,7 +290,7 @@ char* getSessionDateTimeFormatted(String utcSessionDate, String utcSessionTime, 
     struct tm adjustedTime;
     gmtime_r(&sessionEpoch, &adjustedTime);
 
-    if (iWant == "date") {
+    if (iWant != nullptr && strcmp(iWant, "date") == 0) {
         if (isUsEnglishLanguageSelected()) {
             snprintf(formatted, sizeof(formatted), "%s, %s %d%s",
                     localized_text->short_days[adjustedTime.tm_wday],
@@ -294,7 +303,7 @@ char* getSessionDateTimeFormatted(String utcSessionDate, String utcSessionTime, 
                     adjustedTime.tm_mday,
                     localized_text->months[adjustedTime.tm_mon]);
         }
-    } else if (iWant == "time") {
+    } else if (iWant != nullptr && strcmp(iWant, "time") == 0) {
         snprintf(formatted, sizeof(formatted), "%02d:%02d",
                  adjustedTime.tm_hour,
                  adjustedTime.tm_min);

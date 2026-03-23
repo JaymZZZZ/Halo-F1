@@ -279,60 +279,63 @@ static void reload_clock_event_handler(lv_event_t * e) {
   lv_obj_add_event_cb(btn, msgbox_close_event_handler, LV_EVENT_CLICKED, NULL);
 }
 
-static const char *get_team_short_code(const String &team) {
-    if (team == "mercedes")     return "MER";
-    if (team == "red_bull")     return "RBR";
-    if (team == "ferrari")      return "FER";
-    if (team == "mclaren")      return "MCL";
-    if (team == "alpine")       return "ALP";
-    if (team == "rb")           return "RB";
-    if (team == "aston_martin") return "AMR";
-    if (team == "williams")     return "WIL";
-    if (team == "sauber")       return "SAU";
-    if (team == "haas")         return "HAA";
-    if (team == "audi")         return "AUD";
+static const char *get_team_short_code(const char *team) {
+    if (team == NULL) return "F1";
+    if (strcmp(team, "mercedes") == 0)     return "MER";
+    if (strcmp(team, "red_bull") == 0)     return "RBR";
+    if (strcmp(team, "ferrari") == 0)      return "FER";
+    if (strcmp(team, "mclaren") == 0)      return "MCL";
+    if (strcmp(team, "alpine") == 0)       return "ALP";
+    if (strcmp(team, "rb") == 0)           return "RB";
+    if (strcmp(team, "aston_martin") == 0) return "AMR";
+    if (strcmp(team, "williams") == 0)     return "WIL";
+    if (strcmp(team, "sauber") == 0)       return "SAU";
+    if (strcmp(team, "haas") == 0)         return "HAA";
+    if (strcmp(team, "audi") == 0)         return "AUD";
     return "F1";
 }
 
-static const char *get_country_code(const String &nationality) {
-    if (nationality == "British")       return "GB";
-    if (nationality == "Dutch")         return "NL";
-    if (nationality == "Monegasque")    return "MC";
-    if (nationality == "Australian")    return "AU";
-    if (nationality == "French")        return "FR";
-    if (nationality == "Spanish")       return "ES";
-    if (nationality == "German")        return "DE";
-    if (nationality == "Canadian")      return "CA";
-    if (nationality == "Mexican")       return "MX";
-    if (nationality == "Japanese")      return "JP";
-    if (nationality == "Thai")          return "TH";
-    if (nationality == "Chinese")       return "CN";
-    if (nationality == "Italian")       return "IT";
-    if (nationality == "New Zealander") return "NZ";
-    if (nationality == "Brazilian")     return "BR";
+static const char *get_country_code(const char *nationality) {
+    if (nationality == NULL) return "--";
+    if (strcmp(nationality, "British") == 0)       return "GB";
+    if (strcmp(nationality, "Dutch") == 0)         return "NL";
+    if (strcmp(nationality, "Monegasque") == 0)    return "MC";
+    if (strcmp(nationality, "Australian") == 0)    return "AU";
+    if (strcmp(nationality, "French") == 0)        return "FR";
+    if (strcmp(nationality, "Spanish") == 0)       return "ES";
+    if (strcmp(nationality, "German") == 0)        return "DE";
+    if (strcmp(nationality, "Canadian") == 0)      return "CA";
+    if (strcmp(nationality, "Mexican") == 0)       return "MX";
+    if (strcmp(nationality, "Japanese") == 0)      return "JP";
+    if (strcmp(nationality, "Thai") == 0)          return "TH";
+    if (strcmp(nationality, "Chinese") == 0)       return "CN";
+    if (strcmp(nationality, "Italian") == 0)       return "IT";
+    if (strcmp(nationality, "New Zealander") == 0) return "NZ";
+    if (strcmp(nationality, "Brazilian") == 0)     return "BR";
     return "--";
 }
 
-static uint32_t get_nationality_badge_color(const String &nationality) {
-    if (nationality == "British")       return 0x1C2B5A;
-    if (nationality == "Dutch")         return 0x21468B;
-    if (nationality == "Monegasque")    return 0xCE1126;
-    if (nationality == "Australian")    return 0x1C2B5A;
-    if (nationality == "French")        return 0x0055A4;
-    if (nationality == "Spanish")       return 0xAA151B;
-    if (nationality == "German")        return 0x1A1A1A;
-    if (nationality == "Canadian")      return 0xD80621;
-    if (nationality == "Mexican")       return 0x006847;
-    if (nationality == "Japanese")      return 0xBC002D;
-    if (nationality == "Thai")          return 0x2D2A4A;
-    if (nationality == "Chinese")       return 0xDE2910;
-    if (nationality == "Italian")       return 0x008C45;
-    if (nationality == "New Zealander") return 0x1C2B5A;
-    if (nationality == "Brazilian")     return 0x009C3B;
+static uint32_t get_nationality_badge_color(const char *nationality) {
+    if (nationality == NULL) return 0x3A3A3A;
+    if (strcmp(nationality, "British") == 0)       return 0x1C2B5A;
+    if (strcmp(nationality, "Dutch") == 0)         return 0x21468B;
+    if (strcmp(nationality, "Monegasque") == 0)    return 0xCE1126;
+    if (strcmp(nationality, "Australian") == 0)    return 0x1C2B5A;
+    if (strcmp(nationality, "French") == 0)        return 0x0055A4;
+    if (strcmp(nationality, "Spanish") == 0)       return 0xAA151B;
+    if (strcmp(nationality, "German") == 0)        return 0x1A1A1A;
+    if (strcmp(nationality, "Canadian") == 0)      return 0xD80621;
+    if (strcmp(nationality, "Mexican") == 0)       return 0x006847;
+    if (strcmp(nationality, "Japanese") == 0)      return 0xBC002D;
+    if (strcmp(nationality, "Thai") == 0)          return 0x2D2A4A;
+    if (strcmp(nationality, "Chinese") == 0)       return 0xDE2910;
+    if (strcmp(nationality, "Italian") == 0)       return 0x008C45;
+    if (strcmp(nationality, "New Zealander") == 0) return 0x1C2B5A;
+    if (strcmp(nationality, "Brazilian") == 0)     return 0x009C3B;
     return 0x3A3A3A;
 }
 
-static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const String &nationality) {
+static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const char *nationality) {
     lv_obj_t *badge = lv_obj_create(parent);
     if (badge == NULL) return NULL;
 
@@ -366,12 +369,12 @@ static lv_obj_t *create_nationality_flag_icon(lv_obj_t *parent, const String &na
 }
 
 lv_obj_t* create_standings_row(lv_obj_t *parent,
-                            const String &number,
-                            const String &name,
-                            const String &surname,
-                            const String &nationality,
-                            const String &points,
-                            const String &team) {
+                            const char *number,
+                            const char *name,
+                            const char *surname,
+                            const char *nationality,
+                            const char *points,
+                            const char *team) {
     //Serial.println("Creating Standings Row");
 
     // Initialize styles only once
@@ -434,7 +437,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
         // Driver number label
         lv_obj_t *lbl_number = lv_label_create(num_container);
         if (lbl_number != NULL) {
-            lv_label_set_text(lbl_number, number.c_str());
+            lv_label_set_text(lbl_number, (number != NULL) ? number : "");
             lv_obj_set_style_text_font(lbl_number, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
         }
 
@@ -477,11 +480,17 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     }
 
     // --- Name + surname label ---
-    String fullname = name;
-    if (surname.length() > 0) fullname += " " + surname;
+    char fullname[96];
+    if (surname != NULL && surname[0] != '\0') {
+        snprintf(fullname, sizeof(fullname), "%s %s",
+                 (name != NULL) ? name : "",
+                 surname);
+    } else {
+        snprintf(fullname, sizeof(fullname), "%s", (name != NULL) ? name : "");
+    }
     lv_obj_t *lbl_name = lv_label_create(row);
     if (lbl_name != NULL) {
-        lv_label_set_text(lbl_name, fullname.c_str());
+        lv_label_set_text(lbl_name, fullname);
         lv_obj_set_width(lbl_name, 0);
         lv_obj_set_flex_grow(lbl_name, 1);
         lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_MODE_CLIP);
@@ -492,7 +501,7 @@ lv_obj_t* create_standings_row(lv_obj_t *parent,
     // --- Points label ---
     lv_obj_t *lbl_points = lv_label_create(row);
     if (lbl_points != NULL) {
-        lv_label_set_text_fmt(lbl_points, "%s", points.c_str());
+        lv_label_set_text(lbl_points, (points != NULL) ? points : "");
         lv_obj_set_width(lbl_points, COL_POINTS_W);
         lv_obj_set_style_text_font(lbl_points, &HALO_FONT_DETAIL, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_label_set_long_mode(lbl_points, LV_LABEL_LONG_MODE_CLIP);
@@ -547,15 +556,17 @@ static void populate_standings(lv_obj_t * container, int offset) {
         int idx = offset + i;
         if (idx >= TOTAL_DRIVERS) break;
 
-        String points = String(current_season.driver_standings[idx].points) + " pt.";
+        char points_buf[24];
+        snprintf(points_buf, sizeof(points_buf), "%s pt.",
+                 current_season.driver_standings[idx].points.c_str());
         lv_obj_t * row = create_standings_row(
             container,
             current_season.driver_standings[idx].position.c_str(),
             current_season.driver_standings[idx].name.c_str(),
             current_season.driver_standings[idx].surname.c_str(),
             current_season.driver_standings[idx].nationality.c_str(),
-            points.c_str(),
-            current_season.driver_standings[idx].constructorId
+            points_buf,
+            current_season.driver_standings[idx].constructorId.c_str()
         );
         if (row != NULL) lv_obj_set_height(row, row_h);
     }
@@ -602,22 +613,25 @@ static void populate_results(lv_obj_t * container, int offset) {
           driverInitial = driver->name.charAt(0);
         }
 
-        String name = String(driverInitial) + ". " + driver->surname + " #" + results[idx].driver_number;      
-        String gap;
-
-        char gappo[10];
-        snprintf(gappo, 10, "+ %.3f",  results[idx].gap_to_leader);
-
-        gap = (String) gappo;
-        if (idx==0) gap = (String) formatLapTime(results[idx].duration);
+        char name_buf[96];
+        snprintf(name_buf, sizeof(name_buf), "%c. %s #%s",
+                 driverInitial,
+                 driver->surname.c_str(),
+                 results[idx].driver_number.c_str());
+        char gap_buf[24];
+        snprintf(gap_buf, sizeof(gap_buf), "+ %.3f", results[idx].gap_to_leader);
+        if (idx == 0) {
+          String leaderLap = formatLapTime(results[idx].duration);
+          snprintf(gap_buf, sizeof(gap_buf), "%s", leaderLap.c_str());
+        }
 
         lv_obj_t *row = create_standings_row(container,
                                              results[idx].position.c_str(),
-                                             name.c_str(),
+                                             name_buf,
                                              "",
-                                             driver->nationality,
-                                             gap,
-                                             driver->constructorId);
+                                             driver->nationality.c_str(),
+                                             gap_buf,
+                                             driver->constructorId.c_str());
         if (row != NULL) lv_obj_set_height(row, row_h);
 
         // Initial hidden state
@@ -654,23 +668,26 @@ static void populate_results(lv_obj_t * container, int offset) {
           driverInitial = driver->name.charAt(0);
         }
 
-        String name = String(driverInitial) + ". " + driver->surname + " #" + results[idx].driver_number;      
-        String gap;
-
-
-        char gappo[10];
-        if (idx < 10) snprintf(gappo, 10, "+ %.3f",  results[idx].gap_to_leader_quali[2]);
-
-        gap = (String) gappo;
-        if (idx==0) gap = (String) formatLapTime(results[idx].quali[2]);
+        char name_buf[96];
+        snprintf(name_buf, sizeof(name_buf), "%c. %s #%s",
+                 driverInitial,
+                 driver->surname.c_str(),
+                 results[idx].driver_number.c_str());
+        char gap_buf[24];
+        gap_buf[0] = '\0';
+        if (idx < 10) snprintf(gap_buf, sizeof(gap_buf), "+ %.3f", results[idx].gap_to_leader_quali[2]);
+        if (idx == 0) {
+          String leaderLap = formatLapTime(results[idx].quali[2]);
+          snprintf(gap_buf, sizeof(gap_buf), "%s", leaderLap.c_str());
+        }
 
         lv_obj_t *row = create_standings_row(container,
                                              results[idx].position.c_str(),
-                                             name.c_str(),
+                                             name_buf,
                                              "",
-                                             driver->nationality,
-                                             gap,
-                                             driver->constructorId);
+                                             driver->nationality.c_str(),
+                                             gap_buf,
+                                             driver->constructorId.c_str());
         if (row != NULL) lv_obj_set_height(row, row_h);
 
         // Initial hidden state
@@ -1079,8 +1096,7 @@ void create_or_reload_race_sessions(bool force_reload) {
   lv_obj_clean(sessions_container);
 
   lv_obj_t *session_label;
-  RaceSession session;
-  RaceSession last_session;
+  const RaceSession *last_session_ptr = NULL;
 
   if (!next_race.sessionCount || next_race.sessionCount == NULL) {
     lv_obj_t *status = lv_label_create(sessions_container);
@@ -1110,7 +1126,7 @@ void create_or_reload_race_sessions(bool force_reload) {
   const lv_coord_t WEATHER_W = 110;
 
   for (int i = 0; i < next_race.sessionCount; i++) {
-    session = next_race.sessions[i];
+    RaceSession &session = next_race.sessions[i];
     int j = i + 1 < next_race.sessionCount ? i + 1 : next_race.sessionCount - 1;
 
     bool started      = hasSessionStarted(session.date, session.time);
@@ -1145,7 +1161,7 @@ void create_or_reload_race_sessions(bool force_reload) {
         lv_obj_set_style_margin_bottom(session_row, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
     }
 
-    if (is_active) last_session = session;
+    if (is_active) last_session_ptr = &session;
 
     // ── 2. Session info label (fills available width) ───────────────────────
     session_label = lv_label_create(session_row);
@@ -1210,6 +1226,11 @@ void create_or_reload_race_sessions(bool force_reload) {
         }
     }
   }
+
+  if (last_session_ptr == NULL) {
+      last_session_ptr = &next_race.sessions[next_race.sessionCount - 1];
+  }
+  const RaceSession &last_session = *last_session_ptr;
 
   // ── No Spoiler: reset lift when the active session has changed ──────────
   noSpoilerLastKnownSession = last_session.name; // always keep this current
