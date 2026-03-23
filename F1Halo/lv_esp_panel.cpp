@@ -19,10 +19,6 @@
 #define HALO_PANEL_DIAG_INTERVAL_MS (15000UL)
 #endif
 
-#ifndef HALO_RGB_USE_FB_SWAP
-#define HALO_RGB_USE_FB_SWAP 0
-#endif
-
 using namespace esp_panel::board;
 using namespace esp_panel::drivers;
 
@@ -34,15 +30,6 @@ typedef struct {
     void *draw_buf;
     uint16_t *rotate_buf;
     uint32_t rotate_buf_pixels;
-    uint16_t *frame_buf[3];
-    uint8_t frame_buf_count;
-    uint8_t active_fb_idx;
-    uint8_t pending_fb_idx;
-    uint32_t frame_buf_pixels;
-    uint32_t frame_buf_bytes;
-    volatile bool refresh_done;
-    bool use_fb_swap;
-    bool frame_copy_started;
     uint32_t diag_last_ms;
     uint32_t diag_flush_calls;
     uint32_t diag_frame_starts;
@@ -64,7 +51,6 @@ static halo_panel_ctx_t *s_ctx = nullptr;
 
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 static bool init_board(halo_panel_ctx_t *ctx);
-static bool IRAM_ATTR refresh_finish_cb(void *user_data);
 static void maybe_log_diag(halo_panel_ctx_t *ctx);
 
 static inline int32_t clamp_i32(int32_t value, int32_t min_v, int32_t max_v)
@@ -116,14 +102,6 @@ static bool init_board(halo_panel_ctx_t *ctx)
         ctx->backlight->setBrightness(100);
     }
 
-    ctx->frame_buf_count = 0;
-    ctx->active_fb_idx = 0;
-    ctx->pending_fb_idx = 0;
-    ctx->frame_buf_pixels = 0;
-    ctx->frame_buf_bytes = 0;
-    ctx->refresh_done = true;
-    ctx->use_fb_swap = false;
-    ctx->frame_copy_started = false;
     ctx->diag_last_ms = millis();
     ctx->diag_flush_calls = 0;
     ctx->diag_frame_starts = 0;
@@ -137,41 +115,18 @@ static bool init_board(halo_panel_ctx_t *ctx)
     ctx->diag_boot_free_psram = ESP.getFreePsram();
     ctx->diag_boot_free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
-    if (ctx->physical_width > 0 && ctx->physical_height > 0) {
-        ctx->frame_buf_pixels = (uint32_t)ctx->physical_width * (uint32_t)ctx->physical_height;
-        ctx->frame_buf_bytes = ctx->frame_buf_pixels * sizeof(uint16_t);
-    }
-    for (uint8_t i = 0; i < 3; i++) {
-        void *fb = ctx->lcd->getFrameBufferByIndex(i);
-        if (fb == nullptr) break;
-        ctx->frame_buf[ctx->frame_buf_count++] = (uint16_t *)fb;
-    }
-    if (HALO_RGB_USE_FB_SWAP && (ctx->frame_buf_count >= 2) && (ctx->lcd->getFrameColorBits() == 16)) {
-        ctx->use_fb_swap = true;
-        ctx->lcd->attachRefreshFinishCallback(refresh_finish_cb, ctx);
-    }
-
     Serial.printf(
-        "[Panel] cfg: fb_num=%d bounce_lines=%d pclk=%luHz swap_req=%d swap=%d fb_detected=%u phys=%ldx%ld\n",
+        "[Panel] cfg: fb_num=%d bounce_lines=%d pclk=%luHz swap=%d phys=%ldx%ld\n",
         HALO_RGB_FRAME_BUFFERS,
         HALO_RGB_BOUNCE_LINES,
         (unsigned long)HALO_RGB_PCLK_HZ,
-        (int)HALO_RGB_USE_FB_SWAP,
-        ctx->use_fb_swap ? 1 : 0,
-        (unsigned int)ctx->frame_buf_count,
+        0,
         (long)ctx->physical_width,
         (long)ctx->physical_height
     );
     Serial.printf("[Panel] build: %s %s\n", __DATE__, __TIME__);
 
     return true;
-}
-
-static bool IRAM_ATTR refresh_finish_cb(void *user_data)
-{
-    halo_panel_ctx_t *ctx = (halo_panel_ctx_t *)user_data;
-    if (ctx != nullptr) ctx->refresh_done = true;
-    return false;
 }
 
 static void maybe_log_diag(halo_panel_ctx_t *ctx)
@@ -320,57 +275,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     src += (clip_y1 - src_y1) * src_full_w;
     src += (clip_x1 - src_x1);
 
-    if (ctx->use_fb_swap && ctx->portrait_mode && (ctx->frame_buf_count >= 2)) {
-        if (!ctx->frame_copy_started) {
-            ctx->pending_fb_idx = (ctx->active_fb_idx + 1U) % ctx->frame_buf_count;
-            if (ctx->frame_buf_bytes > 0) {
-                memcpy(ctx->frame_buf[ctx->pending_fb_idx], ctx->frame_buf[ctx->active_fb_idx], ctx->frame_buf_bytes);
-            }
-            ctx->frame_copy_started = true;
-            ctx->diag_frame_starts++;
-        }
-
-        uint16_t *dst_fb = ctx->frame_buf[ctx->pending_fb_idx];
-        const int32_t phys_w = ctx->physical_width;
-        const int32_t phys_h = ctx->physical_height;
-        for (int32_t y = 0; y < clip_h; y++) {
-            for (int32_t x = 0; x < clip_w; x++) {
-                const uint16_t px = src[y * src_full_w + x];
-                int32_t phys_x = 0;
-                int32_t phys_y = 0;
-                if (HALO_UI_ROTATION_CW_90) {
-                    phys_x = phys_w - 1 - (clip_y1 + y);
-                    phys_y = clip_x1 + x;
-                } else {
-                    phys_x = clip_y1 + y;
-                    phys_y = phys_h - 1 - (clip_x1 + x);
-                }
-
-                if ((phys_x >= 0) && (phys_x < phys_w) && (phys_y >= 0) && (phys_y < phys_h)) {
-                    dst_fb[phys_y * phys_w + phys_x] = px;
-                } else {
-                    ctx->diag_oob_writes++;
-                }
-            }
-        }
-
-        if (lv_display_flush_is_last(disp)) {
-            ctx->refresh_done = false;
-            (void)ctx->lcd->switchFrameBufferTo(dst_fb);
-
-            const uint32_t t0 = millis();
-            while (!ctx->refresh_done && ((millis() - t0) < 50U)) {
-                delay(1);
-            }
-            const uint32_t waited = (uint32_t)(millis() - t0);
-            if (waited > ctx->diag_max_wait_ms) ctx->diag_max_wait_ms = waited;
-            if (!ctx->refresh_done) ctx->diag_switch_timeouts++;
-
-            ctx->active_fb_idx = ctx->pending_fb_idx;
-            ctx->frame_copy_started = false;
-            ctx->diag_frame_switches++;
-        }
-    } else if (ctx->portrait_mode) {
+    if (ctx->portrait_mode) {
         const uint32_t needed = (uint32_t)(clip_w * clip_h);
         if ((ctx->rotate_buf == nullptr) || (ctx->rotate_buf_pixels < needed)) {
             lv_display_flush_ready(disp);
