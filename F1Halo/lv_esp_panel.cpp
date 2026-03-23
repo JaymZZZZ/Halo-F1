@@ -124,6 +124,7 @@ static bool init_board(halo_panel_ctx_t *ctx)
         (long)ctx->physical_width,
         (long)ctx->physical_height
     );
+    Serial.printf("[Panel] build: %s %s\n", __DATE__, __TIME__);
 
     return true;
 }
