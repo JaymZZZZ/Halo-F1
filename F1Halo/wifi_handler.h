@@ -616,25 +616,18 @@ bool getNextRaceInfo(NextRaceInfo &info) {
 
 // Runs with a lvgl timer, fetches driver standings and next race infos (baseline F1 APIs)
 void update_f1_api(lv_timer_t *timer) {
-  LV_UNUSED(timer);
-
   if (!fetch_f1_driver_standings()) {
-    Serial.println("[F1 API] Standings fetch failed; keeping cached standings/race data.");
+    next_race.sessionCount = 0;
+    return;
   }
 
-  NextRaceInfo refreshed_race = next_race;
-  if (getNextRaceInfo(refreshed_race) && refreshed_race.sessionCount > 0) {
-    next_race = refreshed_race;
-    // ── Weather forecast for each session (Open-Meteo, no API key) ─────────
-    // fetchWeatherForRace() is self-throttled (WEATHER_REFRESH_MS = 1 h) so
-    // calling it here every time update_f1_api fires (hourly) is safe.
-    fetchWeatherForRace(next_race);
-    race_ui_refresh_pending = true;
+  if (getNextRaceInfo(next_race)) {
+      // ── Weather forecast for each session (Open-Meteo, no API key) ─────────
+      // fetchWeatherForRace() is self-throttled (WEATHER_REFRESH_MS = 1 h) so
+      // calling it here every time update_f1_api fires (hourly) is safe.
+      fetchWeatherForRace(next_race);
   } else {
-    Serial.println("[F1 API] Next-race fetch failed; keeping cached race data.");
-    if (next_race.sessionCount <= 0) {
-      race_ui_refresh_pending = true;
-    }
+      next_race.sessionCount = 0;
   }
 
   //update_driver_standings_ui();

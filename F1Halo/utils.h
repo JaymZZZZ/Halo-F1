@@ -339,8 +339,6 @@ void update_internal_clock() {
 
 // Runs with lvgl timer, updates internal clock with offset, updates UI display of clock, date, race name and sessions
 void update_ui(lv_timer_t *timer) {
-  LV_UNUSED(timer);
-  static int last_race_refresh_bucket = -1;
   struct tm timeinfo;
   
   if (!getLocalTime(&timeinfo)) return;
@@ -371,13 +369,7 @@ void update_ui(lv_timer_t *timer) {
   }
   if (racetab_labels.race_name) lv_label_set_text_fmt(racetab_labels.race_name, "%s", next_race.raceName.c_str());
 
-  // Rebuild race/session widgets at most every 5 minutes unless a data refresh requested it.
-  const int refresh_bucket = adjustedTime.tm_min / 5;
-  if (race_ui_refresh_pending || (refresh_bucket != last_race_refresh_bucket)) {
-    create_or_reload_race_sessions();
-    race_ui_refresh_pending = false;
-    last_race_refresh_bucket = refresh_bucket;
-  }
+  create_or_reload_race_sessions();
 
   // NIGHT MODE
   if (nightModeActive) {
@@ -422,7 +414,6 @@ void force_update_ui() {
   if (racetab_labels.race_name) lv_label_set_text_fmt(racetab_labels.race_name, "%s", next_race.raceName.c_str());
 
   create_or_reload_race_sessions( true );
-  race_ui_refresh_pending = false;
 
   // NIGHT MODE
   if (nightModeActive) {
@@ -437,6 +428,5 @@ void force_update_ui() {
 
 // Tells if the first session of the race weekend has started
 bool hasRaceWeekendStarted() {
-  if (next_race.sessionCount <= 0) return false;
   return hasSessionStarted(next_race.sessions[0].date, next_race.sessions[0].time);
 }
