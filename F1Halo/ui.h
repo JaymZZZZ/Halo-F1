@@ -5,6 +5,8 @@ bool getLastSessionResults(SessionResults results[DRIVERS_NUMBER]);
 bool fetch_f1_driver_standings();
 static void populate_standings(lv_obj_t * container, int offset);
 static void populate_results(lv_obj_t * container, int offset);
+static void animate_standings(lv_obj_t * container);
+static void animate_results(lv_obj_t * container);
 static int get_standings_page_size(lv_obj_t *container);
 bool getLatestNews(String &title, String &link, String &desc);
 void create_or_reload_news_ui(lv_timer_t *timer);
@@ -42,6 +44,28 @@ static bool news_styles_initialized = false;
 
 // News QR sizing
 #define HALO_NEWS_QR_SIZE_PX 200
+
+#ifndef HALO_STANDINGS_ANIMATION_MS
+#define HALO_STANDINGS_ANIMATION_MS 0
+#endif
+
+static void maybe_start_standings_animation(lv_obj_t *container, bool show_results)
+{
+#if HALO_STANDINGS_ANIMATION_MS > 0
+    if (show_results) {
+        standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
+            animate_results((lv_obj_t *)lv_timer_get_user_data(t));
+        }, HALO_STANDINGS_ANIMATION_MS, container);
+    } else {
+        standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
+            animate_standings((lv_obj_t *)lv_timer_get_user_data(t));
+        }, HALO_STANDINGS_ANIMATION_MS, container);
+    }
+#else
+    LV_UNUSED(container);
+    LV_UNUSED(show_results);
+#endif
+}
 
 
 void adjustBrightness(uint8_t new_brightness) {
@@ -1028,14 +1052,10 @@ void show_spoiler_button(lv_obj_t *container, bool wasStandings) {
 
             if (noSpoilerWasStandings) {
                 populate_standings(standings_container, 0);
-                standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
-                    animate_standings((lv_obj_t *)lv_timer_get_user_data(t));
-                }, 15000, standings_container);
+                maybe_start_standings_animation(standings_container, false);
             } else {
                 populate_results(standings_container, 0);
-                standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
-                    animate_results((lv_obj_t *)lv_timer_get_user_data(t));
-                }, 15000, standings_container);
+                maybe_start_standings_animation(standings_container, true);
             }
         }, nullptr);
     }, LV_EVENT_CLICKED, nullptr);
@@ -1261,10 +1281,7 @@ void create_or_reload_race_sessions(bool force_reload) {
           show_spoiler_button(standings_container, true);  // true = hiding standings
       } else {
           populate_standings(standings_container, 0);
-
-          standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
-              animate_standings((lv_obj_t *)lv_timer_get_user_data(t));
-          }, 15000, standings_container);
+          maybe_start_standings_animation(standings_container, false);
       }
 
       check_delay = 30 * 60000;
@@ -1312,10 +1329,7 @@ void create_or_reload_race_sessions(bool force_reload) {
           show_spoiler_button(standings_container, false);  // false = hiding results
       } else {
           populate_results(standings_container, 0);
-
-          standings_ui_timer = lv_timer_create([](lv_timer_t * t){
-              animate_results((lv_obj_t *)lv_timer_get_user_data(t));
-          }, 15000, standings_container);
+          maybe_start_standings_animation(standings_container, true);
       }
 
     }
@@ -1355,10 +1369,7 @@ void create_or_reload_race_sessions(bool force_reload) {
         show_spoiler_button(standings_container, false);  // false = hiding results
     } else {
         populate_results(standings_container, 0);
-
-        standings_ui_timer = lv_timer_create([](lv_timer_t * t){
-            animate_results((lv_obj_t *)lv_timer_get_user_data(t));
-        }, 15000, standings_container);
+        maybe_start_standings_animation(standings_container, true);
     }
     return;
   }

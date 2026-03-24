@@ -34,3 +34,7 @@
 // Runtime diagnostics for long-run drift/tearing analysis.
 #define HALO_PANEL_DIAG_LOG 1
 #define HALO_PANEL_DIAG_INTERVAL_MS (15000UL)
+
+// Reduce periodic heavy redraws on the race tab to limit tearing on RGB partial flush.
+// 0 disables auto animation cycling for standings/results.
+#define HALO_STANDINGS_ANIMATION_MS 0
