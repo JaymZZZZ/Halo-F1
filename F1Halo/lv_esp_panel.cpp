@@ -19,10 +19,6 @@
 #define HALO_PANEL_DIAG_INTERVAL_MS (15000UL)
 #endif
 
-#ifndef HALO_ROTATE_CHUNK_ROWS
-#define HALO_ROTATE_CHUNK_ROWS 8
-#endif
-
 using namespace esp_panel::board;
 using namespace esp_panel::drivers;
 
@@ -200,8 +196,6 @@ lv_display_t *halo_panel_display_create(void)
     const int32_t lv_w = SCREEN_WIDTH;
     const int32_t lv_h = SCREEN_HEIGHT;
     const uint32_t draw_buf_size = ((uint32_t)lv_w * (uint32_t)lv_h / HALO_LCD_DRAW_BUF_DIV) * sizeof(lv_color_t);
-    const uint32_t rotate_rows = (HALO_ROTATE_CHUNK_ROWS > 0) ? (uint32_t)HALO_ROTATE_CHUNK_ROWS : 1U;
-    const uint32_t rotate_buf_size = ((uint32_t)SCREEN_HEIGHT * rotate_rows) * sizeof(uint16_t);
 
     ctx->draw_buf = heap_caps_malloc(draw_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (ctx->draw_buf == nullptr) {
@@ -213,9 +207,9 @@ lv_display_t *halo_panel_display_create(void)
         return nullptr;
     }
 
-    ctx->rotate_buf = (uint16_t *)heap_caps_malloc(rotate_buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    ctx->rotate_buf = (uint16_t *)heap_caps_malloc(draw_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (ctx->rotate_buf == nullptr) {
-        ctx->rotate_buf = (uint16_t *)heap_caps_malloc(rotate_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        ctx->rotate_buf = (uint16_t *)heap_caps_malloc(draw_buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
     LV_ASSERT_MALLOC(ctx->rotate_buf);
     if (ctx->rotate_buf == nullptr) {
@@ -223,7 +217,7 @@ lv_display_t *halo_panel_display_create(void)
         lv_free(ctx);
         return nullptr;
     }
-    ctx->rotate_buf_pixels = rotate_buf_size / sizeof(uint16_t);
+    ctx->rotate_buf_pixels = draw_buf_size / sizeof(uint16_t);
 
     lv_display_t *disp = lv_display_create(lv_w, lv_h);
     if (disp == nullptr) {
@@ -282,55 +276,34 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     src += (clip_x1 - src_x1);
 
     if (ctx->portrait_mode) {
-        const int32_t rows_per_chunk = (clip_w < HALO_ROTATE_CHUNK_ROWS) ? clip_w : HALO_ROTATE_CHUNK_ROWS;
-        const uint32_t needed = (uint32_t)clip_h * (uint32_t)rows_per_chunk;
+        const uint32_t needed = (uint32_t)(clip_w * clip_h);
         if ((ctx->rotate_buf == nullptr) || (ctx->rotate_buf_pixels < needed)) {
-            uint16_t *resized = (uint16_t *)heap_caps_realloc(
-                ctx->rotate_buf,
-                needed * sizeof(uint16_t),
-                MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
-            );
-            if (resized == nullptr) {
-                resized = (uint16_t *)heap_caps_realloc(
-                    ctx->rotate_buf,
-                    needed * sizeof(uint16_t),
-                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
-                );
+            lv_display_flush_ready(disp);
+            return;
+        }
+
+        const int32_t dst_w = clip_h;
+        for (int32_t y = 0; y < clip_h; y++) {
+            for (int32_t x = 0; x < clip_w; x++) {
+                const uint16_t px = src[y * src_full_w + x];
+                if (HALO_UI_ROTATION_CW_90) {
+                    const int32_t dx = clip_h - 1 - y;
+                    const int32_t dy = x;
+                    ctx->rotate_buf[dy * dst_w + dx] = px;
+                } else {
+                    const int32_t dx = y;
+                    const int32_t dy = clip_w - 1 - x;
+                    ctx->rotate_buf[dy * dst_w + dx] = px;
+                }
             }
-            if (resized == nullptr) {
-                lv_display_flush_ready(disp);
-                return;
-            }
-            ctx->rotate_buf = resized;
-            ctx->rotate_buf_pixels = needed;
         }
 
         const int32_t phys_x = HALO_UI_ROTATION_CW_90 ? (ctx->physical_width - clip_y2 - 1) : clip_y1;
         const int32_t phys_y = HALO_UI_ROTATION_CW_90 ? clip_x1 : (ctx->physical_height - clip_x2 - 1);
         const int32_t phys_w = clip_h;
-        for (int32_t row0 = 0; row0 < clip_w; row0 += rows_per_chunk) {
-            const int32_t row_count = LV_MIN(rows_per_chunk, clip_w - row0);
-            if (HALO_UI_ROTATION_CW_90) {
-                for (int32_t r = 0; r < row_count; r++) {
-                    const int32_t src_x = row0 + r;
-                    uint16_t *dst_row = ctx->rotate_buf + (size_t)r * (size_t)clip_h;
-                    for (int32_t dx = 0; dx < clip_h; dx++) {
-                        const int32_t src_y = clip_h - 1 - dx;
-                        dst_row[dx] = src[src_y * src_full_w + src_x];
-                    }
-                }
-            } else {
-                for (int32_t r = 0; r < row_count; r++) {
-                    const int32_t dst_y = row0 + r;
-                    const int32_t src_x = clip_w - 1 - dst_y;
-                    uint16_t *dst_row = ctx->rotate_buf + (size_t)r * (size_t)clip_h;
-                    for (int32_t dx = 0; dx < clip_h; dx++) {
-                        dst_row[dx] = src[dx * src_full_w + src_x];
-                    }
-                }
-            }
-            (void)ctx->lcd->drawBitmap(phys_x, phys_y + row0, phys_w, row_count, (const uint8_t *)ctx->rotate_buf, 0);
-        }
+        const int32_t phys_h = clip_w;
+
+        (void)ctx->lcd->drawBitmap(phys_x, phys_y, phys_w, phys_h, (const uint8_t *)ctx->rotate_buf, 0);
     } else {
         (void)ctx->lcd->drawBitmap(clip_x1, clip_y1, clip_w, clip_h, (const uint8_t *)src, 0);
     }
