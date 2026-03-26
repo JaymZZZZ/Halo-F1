@@ -35,6 +35,8 @@ typedef struct {
     uint32_t diag_frame_starts;
     uint32_t diag_frame_switches;
     uint32_t diag_switch_timeouts;
+    uint32_t diag_rotate_skips;
+    uint32_t diag_draw_fails;
     uint32_t diag_oob_writes;
     uint32_t diag_max_clip_w;
     uint32_t diag_max_clip_h;
@@ -45,6 +47,12 @@ typedef struct {
     int32_t physical_width;
     int32_t physical_height;
     bool portrait_mode;
+    bool fb_swap_enabled;
+    bool fb_frame_open;
+    uint32_t refresh_gen;
+    uint16_t *fb_front;
+    uint16_t *fb_back;
+    uint32_t fb_pixels;
 } halo_panel_ctx_t;
 
 static halo_panel_ctx_t *s_ctx = nullptr;
@@ -52,6 +60,7 @@ static halo_panel_ctx_t *s_ctx = nullptr;
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 static bool init_board(halo_panel_ctx_t *ctx);
 static void maybe_log_diag(halo_panel_ctx_t *ctx);
+static bool IRAM_ATTR on_refresh_finish(void *user_data);
 
 static inline int32_t clamp_i32(int32_t value, int32_t min_v, int32_t max_v)
 {
@@ -107,6 +116,8 @@ static bool init_board(halo_panel_ctx_t *ctx)
     ctx->diag_frame_starts = 0;
     ctx->diag_frame_switches = 0;
     ctx->diag_switch_timeouts = 0;
+    ctx->diag_rotate_skips = 0;
+    ctx->diag_draw_fails = 0;
     ctx->diag_oob_writes = 0;
     ctx->diag_max_clip_w = 0;
     ctx->diag_max_clip_h = 0;
@@ -114,19 +125,50 @@ static bool init_board(halo_panel_ctx_t *ctx)
     ctx->diag_boot_free_heap = ESP.getFreeHeap();
     ctx->diag_boot_free_psram = ESP.getFreePsram();
     ctx->diag_boot_free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    ctx->fb_swap_enabled = false;
+    ctx->fb_frame_open = false;
+    ctx->refresh_gen = 0;
+    ctx->fb_front = nullptr;
+    ctx->fb_back = nullptr;
+    ctx->fb_pixels = 0;
+
+    if ((lcd_bus != nullptr) && (lcd_bus->getBasicAttributes().type == ESP_PANEL_BUS_TYPE_RGB) && HALO_RGB_USE_FB_SWAP) {
+        auto *fb0 = (uint16_t *)ctx->lcd->getFrameBufferByIndex(0);
+        auto *fb1 = (uint16_t *)ctx->lcd->getFrameBufferByIndex(1);
+        if ((fb0 != nullptr) && (fb1 != nullptr) && (fb0 != fb1)) {
+            ctx->fb_front = fb0;
+            ctx->fb_back = fb1;
+            ctx->fb_pixels = (uint32_t)ctx->physical_width * (uint32_t)ctx->physical_height;
+            ctx->fb_swap_enabled = true;
+
+            // Keep both framebuffers in sync before first swap.
+            memcpy(ctx->fb_back, ctx->fb_front, ctx->fb_pixels * sizeof(uint16_t));
+            (void)ctx->lcd->attachRefreshFinishCallback(on_refresh_finish, ctx);
+        }
+    }
 
     Serial.printf(
-        "[Panel] cfg: fb_num=%d bounce_lines=%d pclk=%luHz swap=%d phys=%ldx%ld\n",
+        "[Panel] cfg: fb_num=%d bounce_lines=%d pclk=%luHz swap=%d fb_swap=%d phys=%ldx%ld\n",
         HALO_RGB_FRAME_BUFFERS,
         HALO_RGB_BOUNCE_LINES,
         (unsigned long)HALO_RGB_PCLK_HZ,
         0,
+        ctx->fb_swap_enabled ? 1 : 0,
         (long)ctx->physical_width,
         (long)ctx->physical_height
     );
     Serial.printf("[Panel] build: %s %s\n", __DATE__, __TIME__);
 
     return true;
+}
+
+static bool IRAM_ATTR on_refresh_finish(void *user_data)
+{
+    auto *ctx = static_cast<halo_panel_ctx_t *>(user_data);
+    if (ctx != nullptr) {
+        ctx->refresh_gen++;
+    }
+    return false;
 }
 
 static void maybe_log_diag(halo_panel_ctx_t *ctx)
@@ -150,6 +192,7 @@ static void maybe_log_diag(halo_panel_ctx_t *ctx)
 
     Serial.printf(
         "[Diag] t=%lu flush=%lu starts=%lu swaps=%lu to=%lu oob=%lu clip_max=%lux%lu wait_max=%lums "
+        "skip=%lu draw_fail=%lu "
         "heap=%u(min=%u,delta=%ld) int=%u(min=%u,delta=%ld) psram=%u(min=%u,delta=%ld) "
         "lv_used=%u%% lv_frag=%u%%\n",
         (unsigned long)now,
@@ -161,6 +204,8 @@ static void maybe_log_diag(halo_panel_ctx_t *ctx)
         (unsigned long)ctx->diag_max_clip_w,
         (unsigned long)ctx->diag_max_clip_h,
         (unsigned long)ctx->diag_max_wait_ms,
+        (unsigned long)ctx->diag_rotate_skips,
+        (unsigned long)ctx->diag_draw_fails,
         free_heap,
         min_heap,
         (long)free_heap - (long)ctx->diag_boot_free_heap,
@@ -207,9 +252,15 @@ lv_display_t *halo_panel_display_create(void)
         return nullptr;
     }
 
-    ctx->rotate_buf = (uint16_t *)heap_caps_malloc(draw_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    uint32_t rotate_buf_size = draw_buf_size;
+    if (ctx->fb_swap_enabled) {
+        // With framebuffer swap enabled, keep enough workspace for any clip size from LVGL.
+        rotate_buf_size = (uint32_t)SCREEN_WIDTH * (uint32_t)SCREEN_HEIGHT * sizeof(uint16_t);
+    }
+
+    ctx->rotate_buf = (uint16_t *)heap_caps_malloc(rotate_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (ctx->rotate_buf == nullptr) {
-        ctx->rotate_buf = (uint16_t *)heap_caps_malloc(draw_buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        ctx->rotate_buf = (uint16_t *)heap_caps_malloc(rotate_buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
     LV_ASSERT_MALLOC(ctx->rotate_buf);
     if (ctx->rotate_buf == nullptr) {
@@ -217,7 +268,7 @@ lv_display_t *halo_panel_display_create(void)
         lv_free(ctx);
         return nullptr;
     }
-    ctx->rotate_buf_pixels = draw_buf_size / sizeof(uint16_t);
+    ctx->rotate_buf_pixels = rotate_buf_size / sizeof(uint16_t);
 
     lv_display_t *disp = lv_display_create(lv_w, lv_h);
     if (disp == nullptr) {
@@ -278,6 +329,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     if (ctx->portrait_mode) {
         const uint32_t needed = (uint32_t)(clip_w * clip_h);
         if ((ctx->rotate_buf == nullptr) || (ctx->rotate_buf_pixels < needed)) {
+            ctx->diag_rotate_skips++;
             lv_display_flush_ready(disp);
             return;
         }
@@ -303,9 +355,54 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         const int32_t phys_w = clip_h;
         const int32_t phys_h = clip_w;
 
-        (void)ctx->lcd->drawBitmap(phys_x, phys_y, phys_w, phys_h, (const uint8_t *)ctx->rotate_buf, 0);
+        if (ctx->fb_swap_enabled && (ctx->fb_front != nullptr) && (ctx->fb_back != nullptr) && (ctx->fb_pixels > 0)) {
+            if (!ctx->fb_frame_open) {
+                // Start a new composition frame from the currently shown framebuffer.
+                memcpy(ctx->fb_back, ctx->fb_front, ctx->fb_pixels * sizeof(uint16_t));
+                ctx->fb_frame_open = true;
+                ctx->diag_frame_starts++;
+            }
+
+            // Write rotated dirty rect into the back buffer with framebuffer stride.
+            uint16_t *dst = ctx->fb_back + (uint32_t)phys_y * (uint32_t)ctx->physical_width + (uint32_t)phys_x;
+            for (int32_t row = 0; row < phys_h; row++) {
+                memcpy(dst + (uint32_t)row * (uint32_t)ctx->physical_width, ctx->rotate_buf + (uint32_t)row * (uint32_t)phys_w, (size_t)phys_w * sizeof(uint16_t));
+            }
+
+            if (lv_display_flush_is_last(disp)) {
+                const uint32_t prev_gen = ctx->refresh_gen;
+                if (ctx->lcd->switchFrameBufferTo(ctx->fb_back)) {
+                    ctx->diag_frame_switches++;
+
+                    // Wait for the refresh completion callback to ensure we're not writing into the active buffer.
+                    const uint32_t start_wait = millis();
+                    while (ctx->refresh_gen == prev_gen) {
+                        if ((uint32_t)(millis() - start_wait) > 30U) {
+                            ctx->diag_switch_timeouts++;
+                            break;
+                        }
+                        delay(1);
+                    }
+                    const uint32_t waited = (uint32_t)(millis() - start_wait);
+                    if (waited > ctx->diag_max_wait_ms) ctx->diag_max_wait_ms = waited;
+
+                    uint16_t *tmp = ctx->fb_front;
+                    ctx->fb_front = ctx->fb_back;
+                    ctx->fb_back = tmp;
+                } else {
+                    ctx->diag_draw_fails++;
+                }
+                ctx->fb_frame_open = false;
+            }
+        } else {
+            if (!ctx->lcd->drawBitmap(phys_x, phys_y, phys_w, phys_h, (const uint8_t *)ctx->rotate_buf, 0)) {
+                ctx->diag_draw_fails++;
+            }
+        }
     } else {
-        (void)ctx->lcd->drawBitmap(clip_x1, clip_y1, clip_w, clip_h, (const uint8_t *)src, 0);
+        if (!ctx->lcd->drawBitmap(clip_x1, clip_y1, clip_w, clip_h, (const uint8_t *)src, 0)) {
+            ctx->diag_draw_fails++;
+        }
     }
 
     lv_display_flush_ready(disp);
