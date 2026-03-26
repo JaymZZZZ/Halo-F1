@@ -259,5 +259,6 @@ void setup() {
 
 void loop() {   
   lv_timer_periodic_handler();
+  halo_panel_diag_tick();
   delay(5);
 }

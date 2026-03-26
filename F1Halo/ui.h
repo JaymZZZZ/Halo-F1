@@ -1082,6 +1082,19 @@ static void layout_race_tab_sections() {
 // @TODO - make nice graphics for Qualy and race results
 // @TODO - make results/standings not scrollable
 void create_or_reload_race_sessions(bool force_reload) {
+  static uint32_t race_ui_rebuild_count = 0;
+  static uint32_t race_ui_last_rebuild_ms = 0;
+  const uint32_t now_ms = millis();
+  const uint32_t since_last_ms = (race_ui_last_rebuild_ms == 0) ? 0 : (now_ms - race_ui_last_rebuild_ms);
+  race_ui_last_rebuild_ms = now_ms;
+  race_ui_rebuild_count++;
+  Serial.printf(
+      "[RaceUI] rebuild=%lu dt=%lums force=%d sessions=%d\n",
+      (unsigned long)race_ui_rebuild_count,
+      (unsigned long)since_last_ms,
+      force_reload ? 1 : 0,
+      next_race.sessionCount
+  );
 
   if (!race_styles_initialized) {
       race_styles_initialized = true;

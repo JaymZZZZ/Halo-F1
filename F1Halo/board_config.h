@@ -13,12 +13,12 @@
 
 // LVGL draw buffer divisor: 4 = 1/4 screen, 8 = 1/8 screen.
 // Larger buffers reduce partial-flush churn and improve scroll smoothness.
-#define HALO_LCD_DRAW_BUF_DIV 8
+#define HALO_LCD_DRAW_BUF_DIV 12
 
 // RGB anti-tear tuning for ESP32_Display_Panel driver stack.
 #define HALO_RGB_FRAME_BUFFERS 2
-#define HALO_RGB_BOUNCE_LINES 20
-#define HALO_RGB_PCLK_HZ (14 * 1000 * 1000)
+#define HALO_RGB_BOUNCE_LINES 40
+#define HALO_RGB_PCLK_HZ (12 * 1000 * 1000)
 // Framebuffer swap path currently leaks over time on this board/driver combo.
 // Keep this disabled for long-run stability.
 #define HALO_RGB_USE_FB_SWAP 0

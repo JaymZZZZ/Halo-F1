@@ -308,7 +308,6 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         (void)ctx->lcd->drawBitmap(clip_x1, clip_y1, clip_w, clip_h, (const uint8_t *)src, 0);
     }
 
-    maybe_log_diag(ctx);
     lv_display_flush_ready(disp);
 }
 
@@ -360,4 +359,10 @@ void halo_panel_set_brightness(uint8_t brightness_255)
 bool halo_panel_is_ready(void)
 {
     return (s_ctx != nullptr) && (s_ctx->lcd != nullptr);
+}
+
+void halo_panel_diag_tick(void)
+{
+    if (s_ctx == nullptr) return;
+    maybe_log_diag(s_ctx);
 }
