@@ -23,6 +23,16 @@
 #define HALO_LCD_FULL_PRESENT 0
 #endif
 
+#ifndef HALO_PANEL_BOOT_LOG
+#define HALO_PANEL_BOOT_LOG 1
+#endif
+
+#if HALO_PANEL_BOOT_LOG
+#define HALO_BOOT_PRINTLN(msg) do { Serial.println(msg); Serial.flush(); } while (0)
+#else
+#define HALO_BOOT_PRINTLN(msg) do { } while (0)
+#endif
+
 using namespace esp_panel::board;
 using namespace esp_panel::drivers;
 
@@ -78,15 +88,20 @@ static inline int32_t clamp_i32(int32_t value, int32_t min_v, int32_t max_v)
 
 static bool init_board(halo_panel_ctx_t *ctx)
 {
+    HALO_BOOT_PRINTLN("[PanelBoot] init_board begin");
     ctx->board = new Board();
     if (ctx->board == nullptr) return false;
+    HALO_BOOT_PRINTLN("[PanelBoot] board allocated");
     if (!ctx->board->init()) return false;
+    HALO_BOOT_PRINTLN("[PanelBoot] board init ok");
 
     ctx->lcd = ctx->board->getLCD();
     if (ctx->lcd == nullptr) return false;
+    HALO_BOOT_PRINTLN("[PanelBoot] lcd acquired");
 
     auto *lcd_bus = ctx->lcd->getBus();
     if ((lcd_bus != nullptr) && (lcd_bus->getBasicAttributes().type == ESP_PANEL_BUS_TYPE_RGB)) {
+        HALO_BOOT_PRINTLN("[PanelBoot] rgb bus config");
         ctx->lcd->configFrameBufferNumber(HALO_RGB_FRAME_BUFFERS);
 #if CONFIG_IDF_TARGET_ESP32S3
         auto *rgb_bus = static_cast<BusRGB *>(lcd_bus);
@@ -95,7 +110,9 @@ static bool init_board(halo_panel_ctx_t *ctx)
 #endif
     }
 
+    HALO_BOOT_PRINTLN("[PanelBoot] board begin...");
     if (!ctx->board->begin()) return false;
+    HALO_BOOT_PRINTLN("[PanelBoot] board begin ok");
 
     ctx->touch = ctx->board->getTouch();
     ctx->backlight = ctx->board->getBacklight();
@@ -129,10 +146,8 @@ static bool init_board(halo_panel_ctx_t *ctx)
             last_fb = fb;
             fb_cleared++;
         }
-        if (last_fb != nullptr) {
-            (void)ctx->lcd->switchFrameBufferTo(last_fb);
-        }
     }
+    HALO_BOOT_PRINTLN("[PanelBoot] fb clear complete");
 
     if (ctx->backlight != nullptr) {
         ctx->backlight->setBrightness(100);
@@ -263,15 +278,18 @@ lv_display_t *halo_panel_display_create(void)
     if (s_ctx != nullptr) {
         return (lv_display_t *)lv_display_get_default();
     }
+    HALO_BOOT_PRINTLN("[PanelBoot] display_create begin");
 
     halo_panel_ctx_t *ctx = (halo_panel_ctx_t *)lv_malloc_zeroed(sizeof(halo_panel_ctx_t));
     LV_ASSERT_MALLOC(ctx);
     if (ctx == nullptr) return nullptr;
+    HALO_BOOT_PRINTLN("[PanelBoot] ctx allocated");
 
     if (!init_board(ctx)) {
         lv_free(ctx);
         return nullptr;
     }
+    HALO_BOOT_PRINTLN("[PanelBoot] init_board done");
 
     const int32_t lv_w = SCREEN_WIDTH;
     const int32_t lv_h = SCREEN_HEIGHT;
@@ -287,6 +305,7 @@ lv_display_t *halo_panel_display_create(void)
         lv_free(ctx);
         return nullptr;
     }
+    HALO_BOOT_PRINTLN("[PanelBoot] draw_buf allocated");
 
     // Maintain a full logical frame so every presented frame is complete (not only dirty rects).
     // This avoids showing panel power-on garbage/white when only small areas are invalidated.
@@ -328,6 +347,7 @@ lv_display_t *halo_panel_display_create(void)
         lv_free(ctx);
         return nullptr;
     }
+    HALO_BOOT_PRINTLN("[PanelBoot] rotate_buf allocated");
     ctx->rotate_buf_pixels = rotate_buf_size / sizeof(uint16_t);
 
     lv_display_t *disp = lv_display_create(lv_w, lv_h);
@@ -344,6 +364,7 @@ lv_display_t *halo_panel_display_create(void)
     lv_display_set_buffers(disp, ctx->draw_buf, nullptr, draw_buf_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     s_ctx = ctx;
+    HALO_BOOT_PRINTLN("[PanelBoot] display_create complete");
     return disp;
 }
 
