@@ -383,49 +383,48 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
                    (size_t)clip_w * sizeof(uint16_t));
         }
 
-        // Present only once at the end of this LVGL frame.
-        if (lv_display_flush_is_last(disp)) {
-            if (ctx->portrait_mode) {
-                const uint32_t phys_pixels = (uint32_t)ctx->physical_width * (uint32_t)ctx->physical_height;
-                if ((ctx->rotate_buf == nullptr) || (ctx->rotate_buf_pixels < phys_pixels)) {
-                    ctx->diag_rotate_skips++;
-                } else {
-                    memset(ctx->rotate_buf, 0x00, phys_pixels * sizeof(uint16_t));
+        // Present every flush. This is heavier, but avoids depending on `flush_is_last`
+        // semantics that can vary between LVGL integration paths.
+        if (ctx->portrait_mode) {
+            const uint32_t phys_pixels = (uint32_t)ctx->physical_width * (uint32_t)ctx->physical_height;
+            if ((ctx->rotate_buf == nullptr) || (ctx->rotate_buf_pixels < phys_pixels)) {
+                ctx->diag_rotate_skips++;
+            } else {
+                memset(ctx->rotate_buf, 0x00, phys_pixels * sizeof(uint16_t));
 
-                    for (int32_t y = 0; y < log_h; y++) {
-                        const uint16_t *src_row = ctx->logical_fb + (uint32_t)y * (uint32_t)log_w;
-                        for (int32_t x = 0; x < log_w; x++) {
-                            int32_t px;
-                            int32_t py;
-                            if (HALO_UI_ROTATION_CW_90) {
-                                px = ctx->physical_width - 1 - y;
-                                py = x;
-                            } else {
-                                px = y;
-                                py = ctx->physical_height - 1 - x;
-                            }
+                for (int32_t y = 0; y < log_h; y++) {
+                    const uint16_t *src_row = ctx->logical_fb + (uint32_t)y * (uint32_t)log_w;
+                    for (int32_t x = 0; x < log_w; x++) {
+                        int32_t px;
+                        int32_t py;
+                        if (HALO_UI_ROTATION_CW_90) {
+                            px = ctx->physical_width - 1 - y;
+                            py = x;
+                        } else {
+                            px = y;
+                            py = ctx->physical_height - 1 - x;
+                        }
 
-                            if ((uint32_t)px < (uint32_t)ctx->physical_width &&
-                                (uint32_t)py < (uint32_t)ctx->physical_height) {
-                                ctx->rotate_buf[(uint32_t)py * (uint32_t)ctx->physical_width + (uint32_t)px] = src_row[x];
-                            } else {
-                                ctx->diag_oob_writes++;
-                            }
+                        if ((uint32_t)px < (uint32_t)ctx->physical_width &&
+                            (uint32_t)py < (uint32_t)ctx->physical_height) {
+                            ctx->rotate_buf[(uint32_t)py * (uint32_t)ctx->physical_width + (uint32_t)px] = src_row[x];
+                        } else {
+                            ctx->diag_oob_writes++;
                         }
                     }
-
-                    if (!ctx->lcd->drawBitmap(
-                            0, 0, ctx->physical_width, ctx->physical_height,
-                            (const uint8_t *)ctx->rotate_buf, 0)) {
-                        ctx->diag_draw_fails++;
-                    }
                 }
-            } else {
-                const int32_t out_w = LV_MIN(log_w, ctx->physical_width);
-                const int32_t out_h = LV_MIN(log_h, ctx->physical_height);
-                if (!ctx->lcd->drawBitmap(0, 0, out_w, out_h, (const uint8_t *)ctx->logical_fb, 0)) {
+
+                if (!ctx->lcd->drawBitmap(
+                        0, 0, ctx->physical_width, ctx->physical_height,
+                        (const uint8_t *)ctx->rotate_buf, 0)) {
                     ctx->diag_draw_fails++;
                 }
+            }
+        } else {
+            const int32_t out_w = LV_MIN(log_w, ctx->physical_width);
+            const int32_t out_h = LV_MIN(log_h, ctx->physical_height);
+            if (!ctx->lcd->drawBitmap(0, 0, out_w, out_h, (const uint8_t *)ctx->logical_fb, 0)) {
+                ctx->diag_draw_fails++;
             }
         }
 
