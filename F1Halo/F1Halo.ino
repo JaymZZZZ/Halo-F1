@@ -250,6 +250,8 @@ void setup() {
   post_wifi_ui_creation();
 
   lv_screen_load(screen.home);
+  lv_obj_invalidate(screen.home);
+  lv_timer_periodic_handler();
 
   String uuid = getDeviceUUID();
   (void)uuid;

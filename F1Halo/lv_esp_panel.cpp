@@ -273,11 +273,10 @@ lv_display_t *halo_panel_display_create(void)
         return nullptr;
     }
 
-    uint32_t rotate_buf_size = draw_buf_size;
-    if (ctx->fb_swap_enabled) {
-        // With framebuffer swap enabled, keep enough workspace for any clip size from LVGL.
-        rotate_buf_size = (uint32_t)SCREEN_WIDTH * (uint32_t)SCREEN_HEIGHT * sizeof(uint16_t);
-    }
+    // Keep a full logical frame for rotation workspace.
+    // LVGL can emit clipped areas larger than the draw buffer chunk, and a smaller rotate
+    // buffer causes skipped flushes (white/garbled screen regions on RGB panels).
+    uint32_t rotate_buf_size = (uint32_t)SCREEN_WIDTH * (uint32_t)SCREEN_HEIGHT * sizeof(uint16_t);
 
     ctx->rotate_buf = (uint16_t *)heap_caps_malloc(rotate_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (ctx->rotate_buf == nullptr) {
