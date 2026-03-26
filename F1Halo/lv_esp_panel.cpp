@@ -400,19 +400,29 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 
                     // Wait for the refresh completion callback to ensure we're not writing into the active buffer.
                     const uint32_t start_wait = millis();
+                    bool vsync_seen = false;
                     while (ctx->refresh_gen == prev_gen) {
-                        if ((uint32_t)(millis() - start_wait) > 30U) {
+                        if ((uint32_t)(millis() - start_wait) > 80U) {
                             ctx->diag_switch_timeouts++;
                             break;
                         }
                         delay(1);
                     }
+                    if (ctx->refresh_gen != prev_gen) {
+                        vsync_seen = true;
+                    }
                     const uint32_t waited = (uint32_t)(millis() - start_wait);
                     if (waited > ctx->diag_max_wait_ms) ctx->diag_max_wait_ms = waited;
 
-                    uint16_t *tmp = ctx->fb_front;
-                    ctx->fb_front = ctx->fb_back;
-                    ctx->fb_back = tmp;
+                    if (vsync_seen) {
+                        uint16_t *tmp = ctx->fb_front;
+                        ctx->fb_front = ctx->fb_back;
+                        ctx->fb_back = tmp;
+                    } else {
+                        // Fallback to direct draw path if VSYNC callback stalls.
+                        // Keeping swap enabled after a timeout can desync buffer ownership and cause tearing/artifacts.
+                        ctx->fb_swap_enabled = false;
+                    }
                 } else {
                     ctx->diag_draw_fails++;
                 }
