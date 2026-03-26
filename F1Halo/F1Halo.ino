@@ -13,10 +13,6 @@ const int DRIVERS_NUMBER = 22;
 
 const String fw_version = "1.2.0";
 
-#ifndef HALO_BOOT_SOUND_ENABLE
-#define HALO_BOOT_SOUND_ENABLE 0
-#endif
-
 
 #include <ArduinoJson.h>
 #include <time.h>
@@ -220,8 +216,6 @@ TabsStruct tabs;
 
 void setup() {
   Serial.begin(115200);
-  delay(120);
-  Serial.println("[Boot] setup begin");
   //debug = &Serial;
 
   // Bluetooth is unused in Halo-F1; release BT stack memory to improve TLS headroom.
@@ -229,55 +223,39 @@ void setup() {
   (void)btRelease;
 
   localized_text = &language_strings_en_us;
-  Serial.println("[Boot] localized_text ready");
 
   // Initialise LVGL
   lv_init();
-  Serial.println("[Boot] lv_init done");
   lv_tick_set_cb([](){ 
     return (uint32_t) (esp_timer_get_time() / 1000ULL);
   });
-  Serial.println("[Boot] lv_tick_set_cb done");
   disp = halo_panel_display_create();
   if (!disp) {
     Serial.println("[HW] Failed to create LCD driver");
     delay(3000);
     ESP.restart();
   }
-  Serial.println("[Boot] display created");
 
   // Register touch
   lv_indev_t* indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);  
   lv_indev_set_read_cb(indev, halo_panel_touch_read);
-  Serial.println("[Boot] touch registered");
-
-#if HALO_BOOT_SOUND_ENABLE
   playNotificationSound();
-#else
-  Serial.println("[Boot] startup sound skipped");
-#endif
 
   create_ui_skeleton();
-  Serial.println("[Boot] UI skeleton ready");
 
   setupWiFiManager(false);
-  Serial.println("[Boot] WiFi manager complete");
 
   post_wifi_ui_creation();
-  Serial.println("[Boot] post-wifi UI complete");
 
   lv_screen_load(screen.home);
   lv_obj_invalidate(screen.home);
   lv_timer_periodic_handler();
-  Serial.println("[Boot] home screen loaded");
 
   String uuid = getDeviceUUID();
   (void)uuid;
-  Serial.println("[Boot] UUID ready");
 
   sendStatisticData(nullptr);
-  Serial.println("[Boot] setup complete");
 }
 
 void loop() {   

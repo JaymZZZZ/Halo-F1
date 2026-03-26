@@ -52,6 +52,10 @@ static bool news_styles_initialized = false;
 static void maybe_start_standings_animation(lv_obj_t *container, bool show_results)
 {
 #if HALO_STANDINGS_ANIMATION_MS > 0
+    if (standings_ui_timer != NULL) {
+        lv_timer_del(standings_ui_timer);
+        standings_ui_timer = NULL;
+    }
     if (show_results) {
         standings_ui_timer = lv_timer_create([](lv_timer_t *t) {
             animate_results((lv_obj_t *)lv_timer_get_user_data(t));

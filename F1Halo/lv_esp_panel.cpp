@@ -167,6 +167,7 @@ static bool init_board(halo_panel_ctx_t *ctx)
         }
     }
 
+#if HALO_PANEL_DIAG_LOG
     Serial.printf(
         "[Panel] cfg: fb_num=%d bounce_lines=%d pclk=%luHz swap=%d fb_swap=%d phys=%ldx%ld clear=%d\n",
         HALO_RGB_FRAME_BUFFERS,
@@ -179,6 +180,9 @@ static bool init_board(halo_panel_ctx_t *ctx)
         fb_cleared
     );
     Serial.printf("[Panel] build: %s %s\n", __DATE__, __TIME__);
+#else
+    LV_UNUSED(fb_cleared);
+#endif
 
     return true;
 }
