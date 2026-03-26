@@ -735,16 +735,19 @@ static void populate_results(lv_obj_t * container, int offset) {
 
 void set_custom_theme(void) {
   static lv_theme_t *my_theme;
+  lv_display_t *disp = lv_display_get_default();
 
   my_theme = lv_theme_default_init(
-    NULL,
+    disp,
     lv_color_hex(0xFF1511), //0xFFCC00 0x0088FF 0x008C3F
     lv_color_hex(0x000000),
     LV_THEME_DEFAULT_DARK,
     &HALO_FONT_BODY
   );
 
-  lv_disp_set_theme(NULL, my_theme);
+  if (disp != NULL && my_theme != NULL) {
+    lv_display_set_theme(disp, my_theme);
+  }
 }
 
 lv_obj_t* create_chequered_stripe(lv_obj_t* parent) {
@@ -1395,6 +1398,8 @@ void create_or_reload_race_ui() {
   lv_anim_del(&style_fade, NULL); //was standings_container
 
   lv_obj_clean(tabs.race);
+  lv_obj_set_style_bg_color(tabs.race, lv_color_black(), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(tabs.race, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
 
   //----------//
   //   DATE   //
@@ -1653,6 +1658,9 @@ lv_obj_t * create_main_tabview(lv_obj_t * screen) {
 
     lv_obj_t * content = lv_tabview_get_content(tabview);
     lv_obj_set_style_bg_color(tabview, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(tabview, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(content, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(content, LV_OPA_COVER, 0);
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
     tabs.race = lv_tabview_add_tab(tabview, F1_SYMBOL_CHEQUERED_FLAG);
@@ -1660,6 +1668,12 @@ lv_obj_t * create_main_tabview(lv_obj_t * screen) {
     tabs.settings = lv_tabview_add_tab(tabview, F1_SYMBOL_BARS);
 
     lv_obj_set_style_pad_all(tabs.race, 0, 0);
+    lv_obj_set_style_bg_color(tabs.race, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(tabs.race, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(tabs.news, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(tabs.news, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(tabs.settings, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(tabs.settings, LV_OPA_COVER, 0);
     //lv_obj_set_style_pad_all(tabs.news, 0, 0);
     /*lv_obj_set_style_bg_opa(tabs.news, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(tabs.news, lv_color_black(), 0);
