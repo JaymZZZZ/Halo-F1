@@ -113,7 +113,7 @@ static bool init_board(halo_panel_ctx_t *ctx)
     const uint32_t fb_pixels = (uint32_t)ctx->physical_width * (uint32_t)ctx->physical_height;
     if ((lcd_bus != nullptr) && (lcd_bus->getBasicAttributes().type == ESP_PANEL_BUS_TYPE_RGB) && (fb_pixels > 0)) {
         void *last_fb = nullptr;
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < HALO_RGB_FRAME_BUFFERS; i++) {
             void *fb = ctx->lcd->getFrameBufferByIndex((uint8_t)i);
             if ((fb == nullptr) || (fb == last_fb)) {
                 break;
