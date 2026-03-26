@@ -15,6 +15,10 @@
 // Larger buffers reduce partial-flush churn and improve scroll smoothness.
 #define HALO_LCD_DRAW_BUF_DIV 12
 
+// 1 = compose and present full logical frame each flush, 0 = direct partial flush path.
+// Keep disabled for JC8048W550 because full-frame compose path can white-screen on some boots.
+#define HALO_LCD_FULL_PRESENT 0
+
 // RGB anti-tear tuning for ESP32_Display_Panel driver stack.
 #define HALO_RGB_FRAME_BUFFERS 1
 #define HALO_RGB_BOUNCE_LINES 40

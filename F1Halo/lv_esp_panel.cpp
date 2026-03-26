@@ -19,6 +19,10 @@
 #define HALO_PANEL_DIAG_INTERVAL_MS (15000UL)
 #endif
 
+#ifndef HALO_LCD_FULL_PRESENT
+#define HALO_LCD_FULL_PRESENT 0
+#endif
+
 using namespace esp_panel::board;
 using namespace esp_panel::drivers;
 
@@ -290,6 +294,7 @@ lv_display_t *halo_panel_display_create(void)
     if (ctx->logical_fb == nullptr) {
         ctx->logical_fb = (uint16_t *)heap_caps_malloc(logical_fb_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
+#if HALO_LCD_FULL_PRESENT
     if (ctx->logical_fb != nullptr) {
         memset(ctx->logical_fb, 0x00, logical_fb_size);
         ctx->logical_fb_pixels = logical_fb_size / sizeof(uint16_t);
@@ -298,6 +303,14 @@ lv_display_t *halo_panel_display_create(void)
         ctx->logical_fb_pixels = 0;
         ctx->full_present_enabled = false;
     }
+#else
+    if (ctx->logical_fb != nullptr) {
+        lv_free(ctx->logical_fb);
+        ctx->logical_fb = nullptr;
+    }
+    ctx->logical_fb_pixels = 0;
+    ctx->full_present_enabled = false;
+#endif
 
     // Keep a full logical frame for rotation workspace.
     // LVGL can emit clipped areas larger than the draw buffer chunk, and a smaller rotate
