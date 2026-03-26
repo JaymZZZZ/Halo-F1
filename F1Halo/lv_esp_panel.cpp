@@ -28,6 +28,9 @@ typedef struct {
     Touch *touch;
     Backlight *backlight;
     void *draw_buf;
+    uint16_t *logical_fb;
+    uint32_t logical_fb_pixels;
+    bool full_present_enabled;
     uint16_t *rotate_buf;
     uint32_t rotate_buf_pixels;
     uint32_t diag_last_ms;
@@ -145,6 +148,9 @@ static bool init_board(halo_panel_ctx_t *ctx)
     ctx->diag_boot_free_heap = ESP.getFreeHeap();
     ctx->diag_boot_free_psram = ESP.getFreePsram();
     ctx->diag_boot_free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    ctx->logical_fb = nullptr;
+    ctx->logical_fb_pixels = 0;
+    ctx->full_present_enabled = false;
     ctx->fb_swap_enabled = false;
     ctx->fb_frame_open = false;
     ctx->refresh_gen = 0;
@@ -213,7 +219,7 @@ static void maybe_log_diag(halo_panel_ctx_t *ctx)
 
     Serial.printf(
         "[Diag] t=%lu flush=%lu starts=%lu swaps=%lu to=%lu oob=%lu clip_max=%lux%lu wait_max=%lums "
-        "skip=%lu draw_fail=%lu "
+        "skip=%lu draw_fail=%lu mode=%d full=%d phys=%ldx%ld "
         "heap=%u(min=%u,delta=%ld) int=%u(min=%u,delta=%ld) psram=%u(min=%u,delta=%ld) "
         "lv_used=%u%% lv_frag=%u%%\n",
         (unsigned long)now,
@@ -227,6 +233,10 @@ static void maybe_log_diag(halo_panel_ctx_t *ctx)
         (unsigned long)ctx->diag_max_wait_ms,
         (unsigned long)ctx->diag_rotate_skips,
         (unsigned long)ctx->diag_draw_fails,
+        ctx->portrait_mode ? 1 : 0,
+        ctx->full_present_enabled ? 1 : 0,
+        (long)ctx->physical_width,
+        (long)ctx->physical_height,
         free_heap,
         min_heap,
         (long)free_heap - (long)ctx->diag_boot_free_heap,
@@ -262,6 +272,7 @@ lv_display_t *halo_panel_display_create(void)
     const int32_t lv_w = SCREEN_WIDTH;
     const int32_t lv_h = SCREEN_HEIGHT;
     const uint32_t draw_buf_size = ((uint32_t)lv_w * (uint32_t)lv_h / HALO_LCD_DRAW_BUF_DIV) * sizeof(lv_color_t);
+    const uint32_t logical_fb_size = (uint32_t)lv_w * (uint32_t)lv_h * sizeof(uint16_t);
 
     ctx->draw_buf = heap_caps_malloc(draw_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (ctx->draw_buf == nullptr) {
@@ -271,6 +282,21 @@ lv_display_t *halo_panel_display_create(void)
     if (ctx->draw_buf == nullptr) {
         lv_free(ctx);
         return nullptr;
+    }
+
+    // Maintain a full logical frame so every presented frame is complete (not only dirty rects).
+    // This avoids showing panel power-on garbage/white when only small areas are invalidated.
+    ctx->logical_fb = (uint16_t *)heap_caps_malloc(logical_fb_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (ctx->logical_fb == nullptr) {
+        ctx->logical_fb = (uint16_t *)heap_caps_malloc(logical_fb_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (ctx->logical_fb != nullptr) {
+        memset(ctx->logical_fb, 0x00, logical_fb_size);
+        ctx->logical_fb_pixels = logical_fb_size / sizeof(uint16_t);
+        ctx->full_present_enabled = true;
+    } else {
+        ctx->logical_fb_pixels = 0;
+        ctx->full_present_enabled = false;
     }
 
     // Keep a full logical frame for rotation workspace.
@@ -284,6 +310,7 @@ lv_display_t *halo_panel_display_create(void)
     }
     LV_ASSERT_MALLOC(ctx->rotate_buf);
     if (ctx->rotate_buf == nullptr) {
+        if (ctx->logical_fb != nullptr) lv_free(ctx->logical_fb);
         lv_free(ctx->draw_buf);
         lv_free(ctx);
         return nullptr;
@@ -293,6 +320,7 @@ lv_display_t *halo_panel_display_create(void)
     lv_display_t *disp = lv_display_create(lv_w, lv_h);
     if (disp == nullptr) {
         lv_free(ctx->rotate_buf);
+        if (ctx->logical_fb != nullptr) lv_free(ctx->logical_fb);
         lv_free(ctx->draw_buf);
         lv_free(ctx);
         return nullptr;
@@ -345,6 +373,65 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     uint16_t *src = (uint16_t *)px_map;
     src += (clip_y1 - src_y1) * src_full_w;
     src += (clip_x1 - src_x1);
+
+    if (ctx->full_present_enabled && (ctx->logical_fb != nullptr)) {
+        // Compose dirty area into a persistent logical frame.
+        uint16_t *dst_log = ctx->logical_fb + (uint32_t)clip_y1 * (uint32_t)log_w + (uint32_t)clip_x1;
+        for (int32_t row = 0; row < clip_h; row++) {
+            memcpy(dst_log + (uint32_t)row * (uint32_t)log_w,
+                   src + (uint32_t)row * (uint32_t)src_full_w,
+                   (size_t)clip_w * sizeof(uint16_t));
+        }
+
+        // Present only once at the end of this LVGL frame.
+        if (lv_display_flush_is_last(disp)) {
+            if (ctx->portrait_mode) {
+                const uint32_t phys_pixels = (uint32_t)ctx->physical_width * (uint32_t)ctx->physical_height;
+                if ((ctx->rotate_buf == nullptr) || (ctx->rotate_buf_pixels < phys_pixels)) {
+                    ctx->diag_rotate_skips++;
+                } else {
+                    memset(ctx->rotate_buf, 0x00, phys_pixels * sizeof(uint16_t));
+
+                    for (int32_t y = 0; y < log_h; y++) {
+                        const uint16_t *src_row = ctx->logical_fb + (uint32_t)y * (uint32_t)log_w;
+                        for (int32_t x = 0; x < log_w; x++) {
+                            int32_t px;
+                            int32_t py;
+                            if (HALO_UI_ROTATION_CW_90) {
+                                px = ctx->physical_width - 1 - y;
+                                py = x;
+                            } else {
+                                px = y;
+                                py = ctx->physical_height - 1 - x;
+                            }
+
+                            if ((uint32_t)px < (uint32_t)ctx->physical_width &&
+                                (uint32_t)py < (uint32_t)ctx->physical_height) {
+                                ctx->rotate_buf[(uint32_t)py * (uint32_t)ctx->physical_width + (uint32_t)px] = src_row[x];
+                            } else {
+                                ctx->diag_oob_writes++;
+                            }
+                        }
+                    }
+
+                    if (!ctx->lcd->drawBitmap(
+                            0, 0, ctx->physical_width, ctx->physical_height,
+                            (const uint8_t *)ctx->rotate_buf, 0)) {
+                        ctx->diag_draw_fails++;
+                    }
+                }
+            } else {
+                const int32_t out_w = LV_MIN(log_w, ctx->physical_width);
+                const int32_t out_h = LV_MIN(log_h, ctx->physical_height);
+                if (!ctx->lcd->drawBitmap(0, 0, out_w, out_h, (const uint8_t *)ctx->logical_fb, 0)) {
+                    ctx->diag_draw_fails++;
+                }
+            }
+        }
+
+        lv_display_flush_ready(disp);
+        return;
+    }
 
     if (ctx->portrait_mode) {
         const uint32_t needed = (uint32_t)(clip_w * clip_h);
