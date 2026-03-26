@@ -16,7 +16,7 @@
 #define HALO_LCD_DRAW_BUF_DIV 12
 
 // RGB anti-tear tuning for ESP32_Display_Panel driver stack.
-#define HALO_RGB_FRAME_BUFFERS 2
+#define HALO_RGB_FRAME_BUFFERS 1
 #define HALO_RGB_BOUNCE_LINES 40
 #define HALO_RGB_PCLK_HZ (12 * 1000 * 1000)
 #define HALO_RGB_USE_FB_SWAP 0
