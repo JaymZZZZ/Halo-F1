@@ -122,7 +122,7 @@ const LanguageStrings language_strings_en_us PROGMEM = {
   "FP1",
   "FP2",
   "FP3",
-  "Qualifying",
+  "Qualy",
   "Q1",
   "Q2",
   "Q3",
