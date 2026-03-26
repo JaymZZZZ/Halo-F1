@@ -107,6 +107,26 @@ static bool init_board(halo_panel_ctx_t *ctx)
     ctx->physical_height = ctx->lcd->getFrameHeight();
     ctx->portrait_mode = true;
 
+    // Clear RGB framebuffers once at boot so partial LVGL flushes never expose
+    // panel power-on garbage/test patterns.
+    int fb_cleared = 0;
+    const uint32_t fb_pixels = (uint32_t)ctx->physical_width * (uint32_t)ctx->physical_height;
+    if ((lcd_bus != nullptr) && (lcd_bus->getBasicAttributes().type == ESP_PANEL_BUS_TYPE_RGB) && (fb_pixels > 0)) {
+        void *last_fb = nullptr;
+        for (int i = 0; i < 3; i++) {
+            void *fb = ctx->lcd->getFrameBufferByIndex((uint8_t)i);
+            if ((fb == nullptr) || (fb == last_fb)) {
+                break;
+            }
+            memset(fb, 0x00, fb_pixels * sizeof(uint16_t));
+            last_fb = fb;
+            fb_cleared++;
+        }
+        if (last_fb != nullptr) {
+            (void)ctx->lcd->switchFrameBufferTo(last_fb);
+        }
+    }
+
     if (ctx->backlight != nullptr) {
         ctx->backlight->setBrightness(100);
     }
@@ -148,14 +168,15 @@ static bool init_board(halo_panel_ctx_t *ctx)
     }
 
     Serial.printf(
-        "[Panel] cfg: fb_num=%d bounce_lines=%d pclk=%luHz swap=%d fb_swap=%d phys=%ldx%ld\n",
+        "[Panel] cfg: fb_num=%d bounce_lines=%d pclk=%luHz swap=%d fb_swap=%d phys=%ldx%ld clear=%d\n",
         HALO_RGB_FRAME_BUFFERS,
         HALO_RGB_BOUNCE_LINES,
         (unsigned long)HALO_RGB_PCLK_HZ,
         0,
         ctx->fb_swap_enabled ? 1 : 0,
         (long)ctx->physical_width,
-        (long)ctx->physical_height
+        (long)ctx->physical_height,
+        fb_cleared
     );
     Serial.printf("[Panel] build: %s %s\n", __DATE__, __TIME__);
 
