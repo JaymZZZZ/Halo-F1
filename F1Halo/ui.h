@@ -8,6 +8,7 @@ static void populate_results(lv_obj_t * container, int offset);
 static void animate_standings(lv_obj_t * container);
 static void animate_results(lv_obj_t * container);
 static int get_standings_page_size(lv_obj_t *container);
+static void show_standings_status(const char *message);
 bool getLatestNews(String &title, String &link, String &desc);
 void create_or_reload_news_ui(lv_timer_t *timer);
 static void layout_race_tab_sections();
@@ -69,6 +70,19 @@ static void maybe_start_standings_animation(lv_obj_t *container, bool show_resul
     LV_UNUSED(container);
     LV_UNUSED(show_results);
 #endif
+}
+
+static void show_standings_status(const char *message)
+{
+    if (standings_container == NULL) return;
+    lv_obj_clean(standings_container);
+    lv_obj_t *label = lv_label_create(standings_container);
+    lv_label_set_text(label, message != NULL ? message : "");
+    lv_obj_set_width(label, SCREEN_WIDTH - 24);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 6);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(label, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
 
@@ -1147,13 +1161,7 @@ void create_or_reload_race_sessions(bool force_reload) {
     lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(status, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    lv_obj_clean(standings_container);
-    lv_obj_t *standings_status = lv_label_create(standings_container);
-    lv_label_set_text(standings_status, "Standings unavailable.");
-    lv_obj_set_width(standings_status, SCREEN_WIDTH - 24);
-    lv_obj_align(standings_status, LV_ALIGN_TOP_MID, 0, 6);
-    lv_obj_set_style_text_align(standings_status, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(standings_status, &HALO_FONT_BODY, LV_PART_MAIN | LV_STATE_DEFAULT);
+    show_standings_status("Standings unavailable.");
     layout_race_tab_sections();
     return;
   }
@@ -1287,7 +1295,10 @@ void create_or_reload_race_sessions(bool force_reload) {
   // The rest of your logic (fetch standings, timers, etc.) stays unchanged
   if (!standings_loaded_once) {
       fetch_f1_driver_standings();
-      if (!standings_loaded_once) return;
+      if (!standings_loaded_once) {
+          show_standings_status("Standings unavailable.");
+          return;
+      }
   }
 
   if (!hasRaceWeekendStarted() && (force_reload || millis() > last_checked_session_results + check_delay)) {
@@ -1319,7 +1330,7 @@ void create_or_reload_race_sessions(bool force_reload) {
       if (standings_ui_timer) lv_timer_del(standings_ui_timer);
       standings_ui_timer = NULL;
       lv_anim_del(&style_fade, NULL); //was standings_container
-      lv_obj_clean(standings_container);
+      show_standings_status("Waiting for session results...");
       return;
     } 
 
@@ -1336,14 +1347,20 @@ void create_or_reload_race_sessions(bool force_reload) {
       bool got_results = getLastSessionResults(results);
 
       if (!got_results || !results_loaded_once) {
-        if (last_results != current_results) return;
+        if (last_results != current_results) {
+          show_standings_status("Waiting for session results...");
+          return;
+        }
       } else {
         last_results = current_results;
       }
 
       check_delay = 1800000;
     
-      if (!results_loaded_once) return;
+      if (!results_loaded_once) {
+        show_standings_status("Waiting for session results...");
+        return;
+      }
 
       if (noSpoilerModeActive && !noSpoilerLifted) {
           show_spoiler_button(standings_container, false);  // false = hiding results
@@ -1370,7 +1387,10 @@ void create_or_reload_race_sessions(bool force_reload) {
   bool got_results = getLastSessionResults(results);
 
   if (!got_results) {
-    if (last_results != current_results) return;
+    if (last_results != current_results) {
+      show_standings_status("Waiting for session results...");
+      return;
+    }
   } else {
     last_results = current_results;
   }
@@ -1383,7 +1403,10 @@ void create_or_reload_race_sessions(bool force_reload) {
     lv_obj_clean(standings_container);
 
     // show Race Grid when available
-    if (!results_loaded_once) return;
+    if (!results_loaded_once) {
+      show_standings_status("Waiting for session results...");
+      return;
+    }
 
     if (noSpoilerModeActive && !noSpoilerLifted) {
         show_spoiler_button(standings_container, false);  // false = hiding results

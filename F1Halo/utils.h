@@ -154,22 +154,57 @@ static bool parse_utc_session_tm(const String &utcSessionDate,
                                  struct tm *outTm) {
   if (outTm == nullptr) return false;
 
+  int year = 0, month = 0, day = 0;
+  if (sscanf(utcSessionDate.c_str(), "%d-%d-%d", &year, &month, &day) != 3) {
+    return false;
+  }
+
   char timeBuf[16];
   const char *timeStr = utcSessionTime.c_str();
   size_t timeLen = strnlen(timeStr, sizeof(timeBuf) - 1);
   memcpy(timeBuf, timeStr, timeLen);
   timeBuf[timeLen] = '\0';
+
+  // Drop trailing UTC marker.
   if (timeLen > 0 && timeBuf[timeLen - 1] == 'Z') {
     timeBuf[timeLen - 1] = '\0';
+    timeLen--;
   }
 
-  char utcSessionDateTime[32];
-  int n = snprintf(utcSessionDateTime, sizeof(utcSessionDateTime), "%sT%s",
-                   utcSessionDate.c_str(), timeBuf);
-  if (n <= 0 || (size_t)n >= sizeof(utcSessionDateTime)) return false;
+  // Drop fractional seconds (e.g. "14:00:00.000").
+  for (size_t i = 0; i < timeLen; i++) {
+    if (timeBuf[i] == '.') {
+      timeBuf[i] = '\0';
+      timeLen = i;
+      break;
+    }
+  }
+
+  // Normalize HH:MM -> HH:MM:SS
+  if (timeLen == 5) {
+    if ((timeLen + 3) >= sizeof(timeBuf)) return false;
+    timeBuf[5] = ':';
+    timeBuf[6] = '0';
+    timeBuf[7] = '0';
+    timeBuf[8] = '\0';
+  } else if (timeLen > 8) {
+    timeBuf[8] = '\0';
+  }
+
+  int hour = 0, minute = 0, second = 0;
+  if (sscanf(timeBuf, "%d:%d:%d", &hour, &minute, &second) != 3) {
+    return false;
+  }
 
   memset(outTm, 0, sizeof(*outTm));
-  return strptime(utcSessionDateTime, "%Y-%m-%dT%H:%M:%S", outTm) != nullptr;
+  outTm->tm_year = year - 1900;
+  outTm->tm_mon = month - 1;
+  outTm->tm_mday = day;
+  outTm->tm_hour = hour;
+  outTm->tm_min = minute;
+  outTm->tm_sec = second;
+  outTm->tm_isdst = 0;
+  return true;
 }
 
 // Tells if a session has already started given the strings for date and time retrieved from API
