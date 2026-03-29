@@ -5,6 +5,8 @@ void adjustBrightness(uint8_t brightness);
 void create_or_reload_settings_ui();
 void sendStatisticData(lv_timer_t *timer);
 void update_f1_api(lv_timer_t *timer);
+extern unsigned long last_f1_api_attempt_ms;
+extern unsigned long last_f1_api_success_ms;
 
 #ifndef HALO_RACE_UI_REFRESH_MINUTES
 #define HALO_RACE_UI_REFRESH_MINUTES 5
@@ -12,6 +14,10 @@ void update_f1_api(lv_timer_t *timer);
 
 #ifndef HALO_F1_API_RETRY_MS
 #define HALO_F1_API_RETRY_MS (2UL * 60UL * 1000UL)
+#endif
+
+#ifndef HALO_F1_API_STALE_REKICK_MS
+#define HALO_F1_API_STALE_REKICK_MS (12UL * 60UL * 1000UL)
 #endif
 
 String getDeviceUUID() {
@@ -386,6 +392,7 @@ void update_ui(lv_timer_t *timer) {
   LV_UNUSED(timer);
   static int last_race_refresh_bucket = -1;
   static uint32_t last_blank_data_retry_ms = 0;
+  static uint32_t last_stale_rekick_ms = 0;
   struct tm timeinfo;
   
   if (!getLocalTime(&timeinfo)) return;
@@ -431,6 +438,17 @@ void update_ui(lv_timer_t *timer) {
       WiFi.status() == WL_CONNECTED &&
       (uint32_t)(now_ms - last_blank_data_retry_ms) >= HALO_F1_API_RETRY_MS) {
     last_blank_data_retry_ms = now_ms;
+    update_f1_api(nullptr);
+    race_ui_refresh_pending = true;
+  }
+
+  // Safety net: if the periodic F1 API timer gets starved for any reason,
+  // re-kick the fetch path from the UI heartbeat.
+  const uint32_t last_success = (uint32_t)last_f1_api_success_ms;
+  if (WiFi.status() == WL_CONNECTED &&
+      (uint32_t)(now_ms - last_stale_rekick_ms) >= HALO_F1_API_RETRY_MS &&
+      (last_success == 0 || (uint32_t)(now_ms - last_success) >= HALO_F1_API_STALE_REKICK_MS)) {
+    last_stale_rekick_ms = now_ms;
     update_f1_api(nullptr);
     race_ui_refresh_pending = true;
   }

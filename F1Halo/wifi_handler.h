@@ -625,6 +625,7 @@ bool getNextRaceInfo(NextRaceInfo &info) {
 // Runs with a lvgl timer, fetches driver standings and next race infos (baseline F1 APIs)
 void update_f1_api(lv_timer_t *timer) {
   LV_UNUSED(timer);
+  last_f1_api_attempt_ms = millis();
 
   const bool standings_ok = fetch_f1_driver_standings();
   if (!standings_ok) {
@@ -645,6 +646,10 @@ void update_f1_api(lv_timer_t *timer) {
     if (next_race.sessionCount <= 0) {
       race_ui_refresh_pending = true;
     }
+  }
+
+  if (standings_ok && race_ok) {
+    last_f1_api_success_ms = millis();
   }
 
   // Keep retrying quickly only while core race/standings data is missing.

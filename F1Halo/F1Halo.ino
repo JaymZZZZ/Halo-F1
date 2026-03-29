@@ -158,6 +158,8 @@ unsigned int check_delay = 0;
 lv_display_t * disp;
 lv_timer_t * clock_timer, * f1_api_timer, * standings_ui_timer, *news_timer, *statistics_timer, *notifications_timer, *memory_maintenance_timer;
 bool race_ui_refresh_pending = true;
+unsigned long last_f1_api_attempt_ms = 0;
+unsigned long last_f1_api_success_ms = 0;
 
 lv_obj_t * sessions_container, * standings_container;
 
