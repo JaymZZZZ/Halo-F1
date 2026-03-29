@@ -4,6 +4,15 @@ void create_or_reload_race_sessions(bool force_reload = false);
 void adjustBrightness(uint8_t brightness);
 void create_or_reload_settings_ui();
 void sendStatisticData(lv_timer_t *timer);
+void update_f1_api(lv_timer_t *timer);
+
+#ifndef HALO_RACE_UI_REFRESH_MINUTES
+#define HALO_RACE_UI_REFRESH_MINUTES 5
+#endif
+
+#ifndef HALO_F1_API_RETRY_MS
+#define HALO_F1_API_RETRY_MS (2UL * 60UL * 1000UL)
+#endif
 
 String getDeviceUUID() {
   uint64_t chipid = ESP.getEfuseMac();  // unique 48-bit ID from eFuse
@@ -376,6 +385,7 @@ void update_internal_clock() {
 void update_ui(lv_timer_t *timer) {
   LV_UNUSED(timer);
   static int last_race_refresh_bucket = -1;
+  static uint32_t last_blank_data_retry_ms = 0;
   struct tm timeinfo;
   
   if (!getLocalTime(&timeinfo)) return;
@@ -406,12 +416,23 @@ void update_ui(lv_timer_t *timer) {
   }
   if (racetab_labels.race_name) lv_label_set_text_fmt(racetab_labels.race_name, "%s", next_race.raceName.c_str());
 
-  // Rebuild race/session widgets at most every 5 minutes unless a data refresh requested it.
-  const int refresh_bucket = adjustedTime.tm_min / 5;
+  // Rebuild race/session widgets at a coarse cadence unless a data refresh requested it.
+  const int refresh_bucket = adjustedTime.tm_min / HALO_RACE_UI_REFRESH_MINUTES;
   if (race_ui_refresh_pending || (refresh_bucket != last_race_refresh_bucket)) {
     create_or_reload_race_sessions();
     race_ui_refresh_pending = false;
     last_race_refresh_bucket = refresh_bucket;
+  }
+
+  // If race data is currently empty, do a lightweight fast-retry in the background
+  // so the screen doesn't stay blank until the long periodic timer fires.
+  const uint32_t now_ms = millis();
+  if (next_race.sessionCount <= 0 &&
+      WiFi.status() == WL_CONNECTED &&
+      (uint32_t)(now_ms - last_blank_data_retry_ms) >= HALO_F1_API_RETRY_MS) {
+    last_blank_data_retry_ms = now_ms;
+    update_f1_api(nullptr);
+    race_ui_refresh_pending = true;
   }
 
   // NIGHT MODE

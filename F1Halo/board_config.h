@@ -37,6 +37,14 @@
 #define HALO_PANEL_DIAG_LOG 0
 #define HALO_PANEL_DIAG_INTERVAL_MS (15000UL)
 
-// Reduce periodic heavy redraws on the race tab to limit tearing on RGB partial flush.
-// 0 disables auto animation cycling for standings/results.
-#define HALO_STANDINGS_ANIMATION_MS 12000
+// Race UI refresh cadence. Lower frequency reduces long-run heap churn.
+#define HALO_RACE_UI_REFRESH_MINUTES 15
+
+// F1 baseline refresh cadence.
+#define HALO_F1_API_UPDATE_MS (15UL * 60UL * 1000UL)
+
+// Fast retry cadence used only while race/session data is empty.
+#define HALO_F1_API_RETRY_MS (2UL * 60UL * 1000UL)
+
+// 0 disables standings/results auto-page cycling to avoid repeated object churn.
+#define HALO_STANDINGS_ANIMATION_MS 0

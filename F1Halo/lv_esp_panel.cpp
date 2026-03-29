@@ -379,6 +379,25 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         const int32_t phys_w = clip_h;
         const int32_t phys_h = clip_w;
 
+        const int32_t safe_x1 = LV_MAX(phys_x, 0);
+        const int32_t safe_y1 = LV_MAX(phys_y, 0);
+        const int32_t safe_x2 = LV_MIN(phys_x + phys_w, ctx->physical_width);
+        const int32_t safe_y2 = LV_MIN(phys_y + phys_h, ctx->physical_height);
+
+        const int32_t safe_w = safe_x2 - safe_x1;
+        const int32_t safe_h = safe_y2 - safe_y1;
+        if (safe_w <= 0 || safe_h <= 0) {
+            ctx->diag_oob_writes++;
+            lv_display_flush_ready(disp);
+            return;
+        }
+
+        const int32_t src_clip_x = safe_x1 - phys_x;
+        const int32_t src_clip_y = safe_y1 - phys_y;
+        if ((safe_w != phys_w) || (safe_h != phys_h) || (src_clip_x != 0) || (src_clip_y != 0)) {
+            ctx->diag_oob_writes++;
+        }
+
         if (ctx->fb_swap_enabled && (ctx->fb_front != nullptr) && (ctx->fb_back != nullptr) && (ctx->fb_pixels > 0)) {
             if (!ctx->fb_frame_open) {
                 // Start a new composition frame from the currently shown framebuffer.
@@ -388,48 +407,40 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
             }
 
             // Write rotated dirty rect into the back buffer with framebuffer stride.
-            uint16_t *dst = ctx->fb_back + (uint32_t)phys_y * (uint32_t)ctx->physical_width + (uint32_t)phys_x;
-            for (int32_t row = 0; row < phys_h; row++) {
-                memcpy(dst + (uint32_t)row * (uint32_t)ctx->physical_width, ctx->rotate_buf + (uint32_t)row * (uint32_t)phys_w, (size_t)phys_w * sizeof(uint16_t));
+            uint16_t *dst = ctx->fb_back + (uint32_t)safe_y1 * (uint32_t)ctx->physical_width + (uint32_t)safe_x1;
+            for (int32_t row = 0; row < safe_h; row++) {
+                const uint16_t *src_row =
+                    ctx->rotate_buf + (uint32_t)(src_clip_y + row) * (uint32_t)phys_w + (uint32_t)src_clip_x;
+                memcpy(dst + (uint32_t)row * (uint32_t)ctx->physical_width, src_row, (size_t)safe_w * sizeof(uint16_t));
             }
 
             if (lv_display_flush_is_last(disp)) {
-                const uint32_t prev_gen = ctx->refresh_gen;
                 if (ctx->lcd->switchFrameBufferTo(ctx->fb_back)) {
                     ctx->diag_frame_switches++;
-
-                    // Wait for the refresh completion callback to ensure we're not writing into the active buffer.
-                    const uint32_t start_wait = millis();
-                    bool vsync_seen = false;
-                    while (ctx->refresh_gen == prev_gen) {
-                        if ((uint32_t)(millis() - start_wait) > 80U) {
-                            ctx->diag_switch_timeouts++;
-                            break;
-                        }
-                        delay(1);
-                    }
-                    if (ctx->refresh_gen != prev_gen) {
-                        vsync_seen = true;
-                    }
-                    const uint32_t waited = (uint32_t)(millis() - start_wait);
-                    if (waited > ctx->diag_max_wait_ms) ctx->diag_max_wait_ms = waited;
-
-                    if (vsync_seen) {
-                        uint16_t *tmp = ctx->fb_front;
-                        ctx->fb_front = ctx->fb_back;
-                        ctx->fb_back = tmp;
-                    } else {
-                        // Fallback to direct draw path if VSYNC callback stalls.
-                        // Keeping swap enabled after a timeout can desync buffer ownership and cause tearing/artifacts.
-                        ctx->fb_swap_enabled = false;
-                    }
+                    // Non-blocking swap: never stall the LVGL loop waiting for VSYNC.
+                    uint16_t *tmp = ctx->fb_front;
+                    ctx->fb_front = ctx->fb_back;
+                    ctx->fb_back = tmp;
                 } else {
                     ctx->diag_draw_fails++;
                 }
                 ctx->fb_frame_open = false;
             }
         } else {
-            if (!ctx->lcd->drawBitmap(phys_x, phys_y, phys_w, phys_h, (const uint8_t *)ctx->rotate_buf, 0)) {
+            bool ok = true;
+            if ((safe_w == phys_w) && (safe_h == phys_h) && (src_clip_x == 0) && (src_clip_y == 0)) {
+                ok = ctx->lcd->drawBitmap(safe_x1, safe_y1, safe_w, safe_h, (const uint8_t *)ctx->rotate_buf, 0);
+            } else {
+                for (int32_t row = 0; row < safe_h; row++) {
+                    const uint16_t *src_row =
+                        ctx->rotate_buf + (uint32_t)(src_clip_y + row) * (uint32_t)phys_w + (uint32_t)src_clip_x;
+                    if (!ctx->lcd->drawBitmap(safe_x1, safe_y1 + row, safe_w, 1, (const uint8_t *)src_row, 0)) {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if (!ok) {
                 ctx->diag_draw_fails++;
             }
         }

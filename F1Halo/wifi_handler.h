@@ -17,6 +17,14 @@
 #define HALO_MEMORY_GUARD_CONSECUTIVE_HITS (4U)
 #endif
 
+#ifndef HALO_F1_API_UPDATE_MS
+#define HALO_F1_API_UPDATE_MS (60UL * 60UL * 1000UL)
+#endif
+
+#ifndef HALO_F1_API_RETRY_MS
+#define HALO_F1_API_RETRY_MS (2UL * 60UL * 1000UL)
+#endif
+
 static void memory_maintenance_task(lv_timer_t *timer) {
   LV_UNUSED(timer);
   static uint8_t low_mem_hits = 0;
@@ -618,12 +626,14 @@ bool getNextRaceInfo(NextRaceInfo &info) {
 void update_f1_api(lv_timer_t *timer) {
   LV_UNUSED(timer);
 
-  if (!fetch_f1_driver_standings()) {
+  const bool standings_ok = fetch_f1_driver_standings();
+  if (!standings_ok) {
     Serial.println("[F1 API] Standings fetch failed; keeping cached standings/race data.");
   }
 
   NextRaceInfo refreshed_race = next_race;
-  if (getNextRaceInfo(refreshed_race) && refreshed_race.sessionCount > 0) {
+  const bool race_ok = getNextRaceInfo(refreshed_race) && refreshed_race.sessionCount > 0;
+  if (race_ok) {
     next_race = refreshed_race;
     // ── Weather forecast for each session (Open-Meteo, no API key) ─────────
     // fetchWeatherForRace() is self-throttled (WEATHER_REFRESH_MS = 1 h) so
@@ -635,6 +645,13 @@ void update_f1_api(lv_timer_t *timer) {
     if (next_race.sessionCount <= 0) {
       race_ui_refresh_pending = true;
     }
+  }
+
+  // Keep retrying quickly only while core race/standings data is missing.
+  if (f1_api_timer != NULL) {
+    const bool missing_core_data = (next_race.sessionCount <= 0) || (!standings_loaded_once);
+    const bool should_retry_fast = (!standings_ok || !race_ok) && missing_core_data;
+    lv_timer_set_period(f1_api_timer, should_retry_fast ? HALO_F1_API_RETRY_MS : HALO_F1_API_UPDATE_MS);
   }
 
   //update_driver_standings_ui();
@@ -737,7 +754,7 @@ void setupWiFiManager(bool forceConfig) {
       update_ui(nullptr);
       create_or_reload_news_ui(nullptr);
       if (!clock_timer) clock_timer = lv_timer_create(update_ui, 60000, NULL);
-      if (!f1_api_timer) f1_api_timer = lv_timer_create(update_f1_api, 3600000, NULL);
+      if (!f1_api_timer) f1_api_timer = lv_timer_create(update_f1_api, HALO_F1_API_UPDATE_MS, NULL);
       if (!news_timer) news_timer = lv_timer_create(create_or_reload_news_ui, 5*60000, NULL);
       if (!statistics_timer) statistics_timer = lv_timer_create(sendStatisticData, 59*60000, NULL);
       if (!notifications_timer) notifications_timer = lv_timer_create(notification_scheduler_task, NOTIFICATION_INTERVAL_MS, NULL);
@@ -769,7 +786,7 @@ void setupWiFiManager(bool forceConfig) {
       update_ui(nullptr);
       create_or_reload_news_ui(nullptr);
       if (!clock_timer) clock_timer = lv_timer_create(update_ui, 60000, NULL);
-      if (!f1_api_timer) f1_api_timer = lv_timer_create(update_f1_api, 3600000, NULL);
+      if (!f1_api_timer) f1_api_timer = lv_timer_create(update_f1_api, HALO_F1_API_UPDATE_MS, NULL);
       if (!news_timer) news_timer = lv_timer_create(create_or_reload_news_ui, 5*60000, NULL);
       if (!statistics_timer) statistics_timer = lv_timer_create(sendStatisticData, 59*60000, NULL);
       if (!notifications_timer) notifications_timer = lv_timer_create(notification_scheduler_task, NOTIFICATION_INTERVAL_MS, NULL);
